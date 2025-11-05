@@ -29,6 +29,7 @@ export interface ClientConfig {
   localWgPort: number;
   maxRetries: number;
   heartbeatInterval: number;
+  inactivityTimeout: number;
   obfuscation: {
     key: number;
     layer: number;
@@ -68,6 +69,7 @@ export function getClientConfig(remoteAddress: string): ClientConfig {
     localWgPort: Number(process.env.LOCAL_WG_PORT) || 51820,
     maxRetries: Number(process.env.MAX_RETRIES) || 5,
     heartbeatInterval: Number(process.env.HEARTBEAT_INTERVAL) || 120000,
+    inactivityTimeout: Number(process.env.INACTIVITY_TIMEOUT) || 30000,
     obfuscation: {
       key: Math.floor(Math.random() * 256),
       layer: Number(process.env.OBFUSCATION_LAYER) || 3,

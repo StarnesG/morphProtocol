@@ -9,12 +9,15 @@ import { logger } from '../../utils/logger';
 let client: any;
 let handshakeInterval: NodeJS.Timeout;
 let heartBeatInterval: NodeJS.Timeout;
+let inactivityCheckInterval: NodeJS.Timeout;
 let clientOpenStatus = false;
 let HANDSHAKE_SERVER_ADDRESS: string;
 let HANDSHAKE_SERVER_PORT: number;
 let userId: string;
 let encryptor: Encryptor;
 let clientID: Buffer; // 16 bytes binary
+let lastReceivedTime: number = 0; // Track last packet from server
+let newServerPort: number; // Store the port of the new server
 
 export function startUdpClient(remoteAddress: string, encryptionKey: string): Promise<number> {
   return new Promise<number>((resolve, reject) => {
@@ -35,14 +38,18 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
     const LOCALWG_PORT = config.localWgPort;
     const MAX_RETRIES = config.maxRetries;
     const HEARTBEAT_INTERVAL = config.heartbeatInterval;
+    const INACTIVITY_TIMEOUT = config.inactivityTimeout;
+    const INACTIVITY_CHECK_INTERVAL = 10000; // Check every 10 seconds
     
-    // Heartbeat with clientID prepended
-    const heartbeatData = Buffer.concat([
-      clientID,              // 16 bytes
-      Buffer.from([0x01])    // 1 byte marker
-    ]);
+    // Function to generate heartbeat with current clientID
+    function getHeartbeatData() {
+      return Buffer.concat([
+        clientID,              // 16 bytes (current clientID)
+        Buffer.from([0x01])    // 1 byte marker
+      ]);
+    }
 
-    const handshakeData = {
+    let handshakeData = {
       clientID: clientID.toString('base64'), // 16 bytes → 24 char base64
       key: config.obfuscation.key,
       obfuscationLayer: config.obfuscation.layer,
@@ -53,7 +60,7 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
     };
 
     // Create an instance of the Obfuscator class
-    const obfuscator = new Obfuscator(
+    let obfuscator = new Obfuscator(
       handshakeData.key,
       handshakeData.obfuscationLayer,
       handshakeData.randomPadding,
@@ -66,6 +73,9 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
     }
     if (heartBeatInterval) {
       clearInterval(heartBeatInterval);
+    }
+    if (inactivityCheckInterval) {
+      clearInterval(inactivityCheckInterval);
     }
     if (client && clientOpenStatus) {
       let msgClose = encryptor.simpleEncrypt('close');
@@ -83,7 +93,61 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
     let clientPort: number
     let clientRetry = 0
 
-    let newServerPort: number; // Store the port of the new server
+    // Function to check for inactivity and reconnect
+    function checkInactivity() {
+      if (!newServerPort || lastReceivedTime === 0) {
+        // Not yet connected or no data received yet
+        return;
+      }
+      
+      const timeSinceLastReceived = Date.now() - lastReceivedTime;
+      
+      if (timeSinceLastReceived > INACTIVITY_TIMEOUT) {
+        logger.warn(`Inactivity detected: ${timeSinceLastReceived}ms since last packet`);
+        logger.info('Attempting to reconnect with NEW clientID and packet pattern...');
+        
+        // Clear heartbeat interval
+        if (heartBeatInterval) {
+          clearInterval(heartBeatInterval);
+        }
+        
+        // Reset server port to trigger reconnection
+        const oldPort = newServerPort;
+        const oldClientID = clientID.toString('hex');
+        newServerPort = 0;
+        
+        // Generate NEW clientID to evade GFW blocking
+        clientID = crypto.randomBytes(16);
+        logger.info(`Old clientID: ${oldClientID}`);
+        logger.info(`New clientID: ${clientID.toString('hex')}`);
+        
+        // Generate NEW obfuscation parameters to evade GFW blocking
+        handshakeData = {
+          clientID: clientID.toString('base64'), // NEW clientID
+          key: Math.floor(Math.random() * 256),  // NEW random key
+          obfuscationLayer: config.obfuscation.layer,
+          randomPadding: config.obfuscation.paddingLength,
+          fnInitor: fnInitor(),                  // NEW function initializer
+          userId: userId,
+          publicKey: 'not implemented',
+        };
+        
+        // Create NEW obfuscator with new parameters
+        obfuscator = new Obfuscator(
+          handshakeData.key,
+          handshakeData.obfuscationLayer,
+          handshakeData.randomPadding,
+          handshakeData.fnInitor
+        );
+        
+        logger.info(`New obfuscation parameters: key=${handshakeData.key}, fnInitor=${handshakeData.fnInitor}`);
+        
+        // Send handshake to reconnect (new clientID, new packet pattern)
+        sendHandshakeData();
+        
+        logger.info(`Reconnection handshake sent (old port: ${oldPort})`);
+      }
+    }
 
     // Function to send handshake data to the handshake server
     function sendHandshakeData() {
@@ -171,7 +235,8 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
               }
               
               heartBeatInterval = setInterval(() => {
-                client.send(heartbeatData, 0, heartbeatData.length, newServerPort, HANDSHAKE_SERVER_ADDRESS, (error: any) => {
+                const heartbeat = getHeartbeatData();
+                client.send(heartbeat, 0, heartbeat.length, newServerPort, HANDSHAKE_SERVER_ADDRESS, (error: any) => {
                   if (error) {
                     logger.error('Failed to send heartbeat to new server:', error);
                   } else {
@@ -179,6 +244,14 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
                   }
                 })
               }, HEARTBEAT_INTERVAL);
+              
+              // Start inactivity check
+              lastReceivedTime = Date.now(); // Initialize
+              if (inactivityCheckInterval) {
+                clearInterval(inactivityCheckInterval);
+              }
+              inactivityCheckInterval = setInterval(checkInactivity, INACTIVITY_CHECK_INTERVAL);
+              logger.info(`Inactivity detection started (timeout: ${INACTIVITY_TIMEOUT}ms)`);
               
               resolve(clientPort);
             } else if (!isNaN(parseInt(message.toString(), 10))) {
@@ -191,7 +264,8 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
               }
               
               heartBeatInterval = setInterval(() => {
-                client.send(heartbeatData, 0, heartbeatData.length, newServerPort, HANDSHAKE_SERVER_ADDRESS, (error: any) => {
+                const heartbeat = getHeartbeatData();
+                client.send(heartbeat, 0, heartbeat.length, newServerPort, HANDSHAKE_SERVER_ADDRESS, (error: any) => {
                   if (error) {
                     logger.error('Failed to send heartbeat to new server:', error);
                   } else {
@@ -199,6 +273,14 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
                   }
                 })
               }, HEARTBEAT_INTERVAL);
+              
+              // Start inactivity check
+              lastReceivedTime = Date.now(); // Initialize
+              if (inactivityCheckInterval) {
+                clearInterval(inactivityCheckInterval);
+              }
+              inactivityCheckInterval = setInterval(checkInactivity, INACTIVITY_CHECK_INTERVAL);
+              logger.info(`Inactivity detection started (timeout: ${INACTIVITY_TIMEOUT}ms)`);
               
               resolve(clientPort);
             } else {
@@ -212,6 +294,8 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
       } else if (remote.port === LOCALWG_PORT) {
         sendToNewServer(message);
       } else if (remote.port === newServerPort) {
+        // Update last received time when we get data from server
+        lastReceivedTime = Date.now();
         sendToLocalWG(message);
       } else {
         // Message received from the new UDP server
@@ -304,6 +388,10 @@ export function stopUdpClient(): Promise<void> {
     if (heartBeatInterval) {
       clearInterval(heartBeatInterval);
       logger.info('heartBeatInterval stopping...')
+    }
+    if (inactivityCheckInterval) {
+      clearInterval(inactivityCheckInterval);
+      logger.info('inactivityCheckInterval stopping...')
     }
 
     if (client && clientOpenStatus) {

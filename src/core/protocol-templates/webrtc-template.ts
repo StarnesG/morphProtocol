@@ -1,5 +1,5 @@
 /**
- * WebRTC/DTLS Template (ID: 5)
+ * WebRTC/DTLS Template (ID: 4)
  * Mimics DTLS application data (used by WeChat, DingTalk)
  * Overhead: 29 bytes (13 header + 16 clientID in payload)
  */
@@ -7,7 +7,7 @@
 import { BaseTemplate, TemplateParams } from './base-template';
 
 export class WebRtcTemplate extends BaseTemplate {
-  readonly id = 5;
+  readonly id = 4;
   readonly name = 'WebRTC/DTLS';
   
   private epoch: number;

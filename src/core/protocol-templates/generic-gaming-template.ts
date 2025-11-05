@@ -1,5 +1,5 @@
 /**
- * Generic Gaming UDP Template (ID: 4)
+ * Generic Gaming UDP Template (ID: 3)
  * Generic game protocol pattern
  * Overhead: 24 bytes
  */
@@ -7,7 +7,7 @@
 import { BaseTemplate, TemplateParams } from './base-template';
 
 export class GenericGamingTemplate extends BaseTemplate {
-  readonly id = 4;
+  readonly id = 3;
   readonly name = 'Generic Gaming';
   
   encapsulate(data: Buffer, clientID: Buffer): Buffer {

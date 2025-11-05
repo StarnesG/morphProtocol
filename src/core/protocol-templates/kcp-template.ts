@@ -1,5 +1,5 @@
 /**
- * KCP Protocol Template (ID: 3)
+ * KCP Protocol Template (ID: 2)
  * Mimics KCP (made in China, used by Chinese mobile games)
  * Overhead: 32 bytes
  */
@@ -7,7 +7,7 @@
 import { BaseTemplate, TemplateParams } from './base-template';
 
 export class KcpTemplate extends BaseTemplate {
-  readonly id = 3;
+  readonly id = 2;
   readonly name = 'KCP Protocol';
   
   private timestamp: number;

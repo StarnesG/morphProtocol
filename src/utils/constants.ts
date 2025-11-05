@@ -1,0 +1,10 @@
+export const DEFAULT_TIMEOUT_DURATION = 1200000; // 20 minutes
+export const DEFAULT_TRAFFIC_INTERVAL = 600000; // 10 minutes
+export const DEFAULT_HEARTBEAT_INTERVAL = 120000; // 2 minutes
+export const DEFAULT_MAX_RETRIES = 5;
+export const DEFAULT_OBFUSCATION_LAYER = 3;
+export const DEFAULT_PADDING_LENGTH = 8;
+export const DEFAULT_WG_PORT = 51820;
+export const MAX_OBFUSCATION_FUNCTIONS = 17;
+export const MAX_OBFUSCATION_LAYERS = 4;
+export const HEADER_SIZE = 3;

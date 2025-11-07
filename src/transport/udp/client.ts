@@ -8,7 +8,6 @@ import { logger } from '../../utils/logger';
 import { ProtocolTemplate } from '../../core/protocol-templates/base-template';
 import { createTemplate } from '../../core/protocol-templates/template-factory';
 import { selectRandomTemplate } from '../../core/protocol-templates/template-selector';
-import { deriveSessionKeys, encapsulateSecure, decapsulateSecure, SessionKeys } from '../../core/packet-security';
 
 let client: any;
 let handshakeInterval: NodeJS.Timeout;
@@ -23,8 +22,6 @@ let clientID: Buffer; // 16 bytes binary
 let lastReceivedTime: number = 0; // Track last packet from server
 let newServerPort: number; // Store the port of the new server
 let protocolTemplate: ProtocolTemplate; // Protocol template for packet encapsulation
-let sessionKeys: SessionKeys; // Session keys for packet security
-let packetSequence: number = 0; // Packet sequence number for replay protection
 
 export function startUdpClient(remoteAddress: string, encryptionKey: string): Promise<number> {
   return new Promise<number>((resolve, reject) => {
@@ -51,12 +48,7 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
     // Function to generate heartbeat with current clientID and template
     function getHeartbeatData() {
       const heartbeatMarker = Buffer.from([0x01]); // 1 byte marker
-      let packet = protocolTemplate.encapsulate(heartbeatMarker, clientID);
-      
-      // Add security layer if session keys available
-      if (sessionKeys) {
-        packet = encapsulateSecure(clientID, packet, packetSequence++, sessionKeys.sessionKey, sessionKeys.hmacKey);
-      }
+      const packet = protocolTemplate.encapsulate(heartbeatMarker, clientID);
       
       protocolTemplate.updateState();
       return packet;
@@ -256,17 +248,6 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
                 logger.warn('ClientID mismatch! Server returned different clientID');
               }
               
-              // Derive session keys from session salt
-              if (response.sessionSalt) {
-                const sharedSecret = Buffer.from(handshakeData.key.toString()); // Use obfuscation key as shared secret
-                const salt = Buffer.from(response.sessionSalt, 'base64');
-                sessionKeys = deriveSessionKeys(sharedSecret, salt);
-                packetSequence = response.serverNonce || 0; // Initialize sequence from server nonce
-                logger.info('Session keys derived, packet security enabled');
-              } else {
-                logger.warn('No session salt received, packet security disabled');
-              }
-              
               // Stop sending handshake data and start heartbeat
               if (handshakeInterval) {
                 clearInterval(handshakeInterval);
@@ -335,21 +316,8 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
         // Update last received time when we get data from server
         lastReceivedTime = Date.now();
         
-        // Decapsulate packet from server
-        let packetToProcess = message;
-        
-        // If security enabled, decapsulate security layer first
-        if (sessionKeys) {
-          const secureResult = decapsulateSecure(message, sessionKeys.sessionKey, sessionKeys.hmacKey, packetSequence - 1);
-          if (!secureResult) {
-            logger.warn('Failed to decapsulate secure packet from server');
-            return;
-          }
-          packetToProcess = secureResult.data;
-        }
-        
         // Decapsulate template layer
-        const obfuscatedData = protocolTemplate.decapsulate(packetToProcess);
+        const obfuscatedData = protocolTemplate.decapsulate(message);
         if (!obfuscatedData) {
           logger.warn('Failed to decapsulate template packet from server');
           return;
@@ -368,12 +336,7 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
         const obfuscatedData = obfuscator.obfuscation(message);
         
         // Encapsulate with protocol template
-        let packet = protocolTemplate.encapsulate(Buffer.from(obfuscatedData), clientID);
-        
-        // Add security layer if session keys available
-        if (sessionKeys) {
-          packet = encapsulateSecure(clientID, packet, packetSequence++, sessionKeys.sessionKey, sessionKeys.hmacKey);
-        }
+        const packet = protocolTemplate.encapsulate(Buffer.from(obfuscatedData), clientID);
         
         // Update template state (sequence numbers, etc.)
         protocolTemplate.updateState();

@@ -308,7 +308,7 @@ server.on('message', async (message, remote) => {
           }
         });
         
-        // Update traffic
+        // Track download traffic (server → client) for billing/quota
         session.userInfo.traffic += packet.length;
         session.lastSeen = Date.now();
       } else {
@@ -339,8 +339,7 @@ server.on('message', async (message, remote) => {
             }
           });
           
-          // Update traffic
-          session.userInfo.traffic += wgMessage.length;
+          // Note: We only track download traffic (server → client), not upload
         } else {
           logger.debug(`Heartbeat received from client ${clientID}`);
         }

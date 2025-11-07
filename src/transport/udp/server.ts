@@ -179,37 +179,34 @@ function handleDataPacket(packet: Buffer, remote: any) {
   session.userInfo.traffic += packet.length;
 }
 
-// Function to check if session should shut down due to inactivity
-function checkInactivityTimeout(clientID: string) {
+// Function to shut down inactive session
+function shutdownInactiveSession(clientID: string) {
   const session = activeSessions.get(clientID);
   if (!session) return;
   
-  const currentTime = Date.now();
-  if (currentTime - session.lastSeen >= TIMEOUT_DURATION) {
-    logger.info(`Shutting down session for clientID ${clientID} due to inactivity`);
-    
-    // Send inactivity message
-    const msg = encryptor.simpleEncrypt("inactivity");
-    server.send(msg, 0, msg.length, session.remotePort, session.remoteAddress, (error) => {
-      if (error) {
-        logger.error(`Failed to send inactivity message to ${clientID}`);
-      } else {
-        logger.info(`Inactivity message sent to ${clientID}`);
-      }
-    });
-    
-    // Report traffic and cleanup
-    subTraffic(session.userInfo.userId, session.userInfo.traffic);
-    session.socket.close();
-    
-    // Remove from both indexes
-    activeSessions.delete(clientID);
-    const ipKey = `${session.remoteAddress}:${session.remotePort}:${session.headerID}`;
-    ipIndex.delete(ipKey);
-    logger.info(`Removed from ipIndex: ${ipKey}`);
-    
-    subClientNum(HOST_NAME);
-  }
+  logger.info(`Shutting down session for clientID ${clientID} due to inactivity`);
+  
+  // Send inactivity message
+  const msg = encryptor.simpleEncrypt("inactivity");
+  server.send(msg, 0, msg.length, session.remotePort, session.remoteAddress, (error) => {
+    if (error) {
+      logger.error(`Failed to send inactivity message to ${clientID}`);
+    } else {
+      logger.info(`Inactivity message sent to ${clientID}`);
+    }
+  });
+  
+  // Report traffic and cleanup
+  subTraffic(session.userInfo.userId, session.userInfo.traffic);
+  session.socket.close();
+  
+  // Remove from both indexes
+  activeSessions.delete(clientID);
+  const ipKey = `${session.remoteAddress}:${session.remotePort}:${session.headerID}`;
+  ipIndex.delete(ipKey);
+  logger.info(`Removed from ipIndex: ${ipKey}`);
+  
+  subClientNum(HOST_NAME);
 }
 
 // Traffic reporting interval
@@ -222,6 +219,16 @@ setInterval(() => {
     }
   });
 }, TRAFFIC_INTERVAL);
+
+// Inactivity check interval - check all sessions periodically
+setInterval(() => {
+  const currentTime = Date.now();
+  activeSessions.forEach((session, clientID) => {
+    if (currentTime - session.lastSeen >= TIMEOUT_DURATION) {
+      shutdownInactiveSession(clientID);
+    }
+  });
+}, TIMEOUT_DURATION / 2); // Check twice as often as timeout to ensure timely detection
 // Handle incoming messages
 server.on('message', async (message, remote) => {
   // Rate limit check for all packets
@@ -441,16 +448,6 @@ server.on('message', async (message, remote) => {
         } else {
           logger.info(`Response sent to client ${clientID} at ${remote.address}:${remote.port}`);
         }
-      });
-      
-      // Set up inactivity check timer
-      const inactivityTimer = setInterval(() => {
-        checkInactivityTimeout(clientID);
-      }, TIMEOUT_DURATION);
-      
-      // Cleanup timer when socket closes
-      newSocket.on('close', () => {
-        clearInterval(inactivityTimer);
       });
     });
     //clientStatOperation(1)

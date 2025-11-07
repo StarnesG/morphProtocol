@@ -1,19 +1,25 @@
 /**
  * Packet Security Layer
- * Provides replay protection, HMAC authentication, and clientID encryption
+ * Provides replay protection and HMAC authentication
+ * 
+ * NOTE: ClientID is kept in PLAINTEXT for O(1) session lookup.
+ * This is a deliberate trade-off:
+ * - Pros: O(1) lookup (no need to loop through all sessions)
+ * - Cons: ClientID visible to network observers (privacy concern)
+ * - Security: Data still encrypted, HMAC prevents forgery, replay protection active
  */
 
 import * as crypto from 'crypto';
 
 export interface SecurePacketHeader {
-  encryptedClientID: Buffer;  // 16 bytes
-  sequence: number;            // 4 bytes
-  timestamp: number;           // 4 bytes
-  hmac: Buffer;                // 32 bytes
+  clientID: Buffer;     // 16 bytes (PLAINTEXT for O(1) lookup)
+  sequence: number;     // 4 bytes
+  timestamp: number;    // 4 bytes
+  hmac: Buffer;         // 32 bytes
 }
 
 export interface SessionKeys {
-  sessionKey: Buffer;   // For clientID encryption
+  sessionKey: Buffer;   // For data encryption (not used for clientID anymore)
   hmacKey: Buffer;      // For HMAC
 }
 
@@ -28,48 +34,22 @@ export function deriveSessionKeys(sharedSecret: Buffer, salt: Buffer): SessionKe
   return { sessionKey, hmacKey };
 }
 
-/**
- * Encrypt clientID using AES-128-CTR with sequence as nonce
- */
-export function encryptClientID(clientID: Buffer, sessionKey: Buffer, sequence: number): Buffer {
-  // Use sequence number as part of IV (ensures uniqueness)
-  const iv = Buffer.alloc(16);
-  iv.writeUInt32BE(sequence, 0);
-  
-  const cipher = crypto.createCipheriv('aes-128-ctr', sessionKey, iv);
-  const encrypted = Buffer.concat([cipher.update(clientID), cipher.final()]);
-  
-  return encrypted;
-}
-
-/**
- * Decrypt clientID using AES-128-CTR with sequence as nonce
- */
-export function decryptClientID(encryptedClientID: Buffer, sessionKey: Buffer, sequence: number): Buffer {
-  // Use sequence number as part of IV
-  const iv = Buffer.alloc(16);
-  iv.writeUInt32BE(sequence, 0);
-  
-  const decipher = crypto.createDecipheriv('aes-128-ctr', sessionKey, iv);
-  const decrypted = Buffer.concat([decipher.update(encryptedClientID), decipher.final()]);
-  
-  return decrypted;
-}
+// NOTE: ClientID encryption functions removed - clientID is now plaintext for O(1) lookup
 
 /**
  * Compute HMAC-SHA256 for packet authentication
  */
 export function computeHMAC(
   hmacKey: Buffer,
-  encryptedClientID: Buffer,
+  clientID: Buffer,
   sequence: number,
   timestamp: number,
   data: Buffer
 ): Buffer {
   const hmac = crypto.createHmac('sha256', hmacKey);
   
-  // HMAC over: encryptedClientID + sequence + timestamp + data
-  hmac.update(encryptedClientID);
+  // HMAC over: clientID + sequence + timestamp + data
+  hmac.update(clientID);
   
   const seqBuf = Buffer.alloc(4);
   seqBuf.writeUInt32BE(sequence, 0);
@@ -89,13 +69,13 @@ export function computeHMAC(
  */
 export function verifyHMAC(
   hmacKey: Buffer,
-  encryptedClientID: Buffer,
+  clientID: Buffer,
   sequence: number,
   timestamp: number,
   data: Buffer,
   receivedHMAC: Buffer
 ): boolean {
-  const computedHMAC = computeHMAC(hmacKey, encryptedClientID, sequence, timestamp, data);
+  const computedHMAC = computeHMAC(hmacKey, clientID, sequence, timestamp, data);
   return crypto.timingSafeEqual(computedHMAC, receivedHMAC);
 }
 
@@ -133,6 +113,7 @@ export function validateSequence(packetSequence: number, lastSequence: number): 
 
 /**
  * Encapsulate data with security headers
+ * ClientID is kept in PLAINTEXT for O(1) session lookup
  */
 export function encapsulateSecure(
   clientID: Buffer,
@@ -143,17 +124,15 @@ export function encapsulateSecure(
 ): Buffer {
   const timestamp = Math.floor(Date.now() / 1000);
   
-  // Encrypt clientID
-  const encryptedClientID = encryptClientID(clientID, sessionKey, sequence);
+  // Compute HMAC over plaintext clientID
+  const hmac = computeHMAC(hmacKey, clientID, sequence, timestamp, data);
   
-  // Compute HMAC
-  const hmac = computeHMAC(hmacKey, encryptedClientID, sequence, timestamp, data);
-  
-  // Build packet: [encryptedClientID][sequence][timestamp][hmac][data]
+  // Build packet: [plaintextClientID][sequence][timestamp][hmac][data]
   const packet = Buffer.alloc(16 + 4 + 4 + 32 + data.length);
   let offset = 0;
   
-  encryptedClientID.copy(packet, offset);
+  // ClientID in plaintext
+  clientID.copy(packet, offset);
   offset += 16;
   
   packet.writeUInt32BE(sequence, offset);
@@ -172,6 +151,7 @@ export function encapsulateSecure(
 
 /**
  * Decapsulate and validate secure packet
+ * ClientID is in PLAINTEXT for O(1) session lookup
  */
 export function decapsulateSecure(
   packet: Buffer,
@@ -186,8 +166,8 @@ export function decapsulateSecure(
   
   let offset = 0;
   
-  // Extract encrypted clientID
-  const encryptedClientID = packet.slice(offset, offset + 16);
+  // Extract plaintext clientID
+  const clientID = packet.slice(offset, offset + 16);
   offset += 16;
   
   // Extract sequence
@@ -216,12 +196,9 @@ export function decapsulateSecure(
   }
   
   // Verify HMAC
-  if (!verifyHMAC(hmacKey, encryptedClientID, sequence, timestamp, data, receivedHMAC)) {
+  if (!verifyHMAC(hmacKey, clientID, sequence, timestamp, data, receivedHMAC)) {
     return null; // Authentication failed
   }
-  
-  // Decrypt clientID
-  const clientID = decryptClientID(encryptedClientID, sessionKey, sequence);
   
   return { clientID, data, sequence };
 }

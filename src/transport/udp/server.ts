@@ -107,38 +107,46 @@ function handleDataPacket(packet: Buffer, remote: any) {
   let session: ClientSession | null = null;
   let clientID: string = '';
   
-  // Step 1: Handle security layer if present
-  // NOTE: When security is enabled, clientID is encrypted, so we must try
-  // decapsulating with each session's keys (O(n)). This is unavoidable for
-  // security - we cannot expose clientID in plaintext. However, this is still
-  // much faster than before because:
-  // 1. Only sessions with security enabled are tried
-  // 2. Only HMAC validation + clientID decryption (not full packet processing)
-  // 3. Most deployments use security, so this path is common
-  if (packet.length >= 56) { // Min size for secure packet: 16+4+4+32
-    for (const [sessionClientID, sess] of activeSessions.entries()) {
-      if (sess.sessionKeys) {
-        const secureResult = decapsulateSecure(packet, sess.sessionKeys.sessionKey, sess.sessionKeys.hmacKey, sess.lastSequence);
-        if (secureResult && secureResult.clientID.toString('hex') === sessionClientID) {
-          session = sess;
-          clientID = sessionClientID;
-          packetToProcess = secureResult.data;
-          session.lastSequence = secureResult.sequence;
-          break;
-        }
-      }
-    }
+  // Step 1: Check if packet has security layer (min 56 bytes)
+  if (packet.length >= 56) {
+    // Extract plaintext clientID from first 16 bytes (O(1) operation!)
+    const clientIDBuffer = packet.slice(0, 16);
+    clientID = clientIDBuffer.toString('hex');
     
-    if (session) {
-      // Security layer decapsulated, now process template layer
-      // (skip to template decapsulation below)
+    // O(1) lookup in sessions Map
+    session = activeSessions.get(clientID) || null;
+    
+    if (session && session.sessionKeys) {
+      // Validate security layer (HMAC, timestamp, sequence)
+      const secureResult = decapsulateSecure(packet, session.sessionKeys.sessionKey, session.sessionKeys.hmacKey, session.lastSequence);
+      
+      if (!secureResult) {
+        logger.warn(`Security validation failed for client ${clientID}`);
+        return;
+      }
+      
+      // Verify clientID matches (should always match since we extracted it)
+      if (secureResult.clientID.toString('hex') !== clientID) {
+        logger.warn(`ClientID mismatch: expected ${clientID}, got ${secureResult.clientID.toString('hex')}`);
+        return;
+      }
+      
+      // Update sequence and extract data
+      session.lastSequence = secureResult.sequence;
+      packetToProcess = secureResult.data;
+      
+      // Security layer validated, proceed to template layer below
+    } else if (session) {
+      // Session found but no security keys - shouldn't happen
+      logger.warn(`Session ${clientID} has no security keys`);
+      return;
     } else {
-      // Not a valid secure packet, try as plaintext
-      packetToProcess = packet;
+      // Session not found - might be plaintext packet, try dual indexing
+      session = null;
     }
   }
   
-  // Step 2: If no session found via security layer, use dual indexing
+  // Step 2: If no session found via security layer, use dual indexing (plaintext packets)
   if (!session) {
     // Extract headerID from packet (protocol-specific)
     const extracted = extractHeaderIDFromPacket(packetToProcess);

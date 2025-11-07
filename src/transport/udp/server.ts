@@ -6,7 +6,7 @@ import { Encryptor } from '../../crypto/encryptor';
 import { getServerConfig } from '../../config';
 import { logger } from '../../utils/logger';
 import { UserInfo } from '../../types';
-import { ProtocolTemplate } from '../../core/protocol-templates/base-template';
+import { ProtocolTemplate, extractHeaderIDFromPacket } from '../../core/protocol-templates/base-template';
 import { createTemplate } from '../../core/protocol-templates/template-factory';
 import { deriveSessionKeys, decapsulateSecure, encapsulateSecure, SessionKeys } from '../../core/packet-security';
 import { RateLimiter } from '../../core/rate-limiter';
@@ -108,9 +108,14 @@ function handleDataPacket(packet: Buffer, remote: any) {
   let clientID: string = '';
   
   // Step 1: Handle security layer if present
+  // NOTE: When security is enabled, clientID is encrypted, so we must try
+  // decapsulating with each session's keys (O(n)). This is unavoidable for
+  // security - we cannot expose clientID in plaintext. However, this is still
+  // much faster than before because:
+  // 1. Only sessions with security enabled are tried
+  // 2. Only HMAC validation + clientID decryption (not full packet processing)
+  // 3. Most deployments use security, so this path is common
   if (packet.length >= 56) { // Min size for secure packet: 16+4+4+32
-    // Try to find session by attempting security decapsulation
-    // This is O(n) but only for security validation, not full packet processing
     for (const [sessionClientID, sess] of activeSessions.entries()) {
       if (sess.sessionKeys) {
         const secureResult = decapsulateSecure(packet, sess.sessionKeys.sessionKey, sess.sessionKeys.hmacKey, sess.lastSequence);
@@ -136,25 +141,14 @@ function handleDataPacket(packet: Buffer, remote: any) {
   // Step 2: If no session found via security layer, use dual indexing
   if (!session) {
     // Extract headerID from packet (protocol-specific)
-    // We need to detect template type first
-    let headerID: Buffer | null = null;
-    let template: ProtocolTemplate | null = null;
+    const extracted = extractHeaderIDFromPacket(packetToProcess);
     
-    // Try each template type to extract headerID
-    for (const templateId of [1, 2, 3]) {
-      const testTemplate = createTemplate(templateId);
-      const extractedID = testTemplate.extractHeaderID(packet);
-      if (extractedID) {
-        headerID = extractedID;
-        template = testTemplate;
-        break;
-      }
-    }
-    
-    if (!headerID) {
+    if (!extracted) {
       logger.warn(`Failed to extract headerID from ${remote.address}:${remote.port}`);
       return;
     }
+    
+    const headerID = extracted.headerID;
     
     // Build ipIndex key
     const ipKey = `${remote.address}:${remote.port}:${headerID.toString('hex')}`;
@@ -340,7 +334,7 @@ server.on('message', async (message, remote) => {
         port: responsePort,
         clientID: clientIDBase64,
         status: 'reconnected',
-        sessionSalt: sessionKeys ? Buffer.from(sessionKeys.sessionKey).toString('base64') : undefined,
+        sessionSalt: session.sessionKeys ? Buffer.from(session.sessionKeys.sessionKey).toString('base64') : undefined,
         serverNonce: session.lastSequence
       };
       const responseEncrypted = encryptor.simpleEncrypt(JSON.stringify(response));

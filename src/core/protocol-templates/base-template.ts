@@ -78,3 +78,46 @@ export abstract class BaseTemplate implements ProtocolTemplate {
     this.sequenceNumber = (this.sequenceNumber + 1) % 65536;
   }
 }
+
+/**
+ * Static helper to extract headerID from packet without creating template instance
+ * Tries all template types and returns first match
+ * @returns { headerID: Buffer, templateId: number } or null
+ */
+export function extractHeaderIDFromPacket(packet: Buffer): { headerID: Buffer; templateId: number } | null {
+  if (packet.length < 4) {
+    return null;
+  }
+  
+  // Try Generic Gaming (ID: 3) first - has magic "GAME" signature
+  if (packet.length >= 8 && packet.toString('ascii', 0, 4) === 'GAME') {
+    const gamingHeaderID = packet.slice(4, 8);
+    return { headerID: gamingHeaderID, templateId: 3 };
+  }
+  
+  // Try QUIC (ID: 1) - flags byte 0x40-0x4f, Connection ID at bytes 1-8
+  if (packet.length >= 9) {
+    const flags = packet[0];
+    if ((flags & 0xf0) === 0x40) { // QUIC short header
+      const quicHeaderID = packet.slice(1, 9);
+      return { headerID: quicHeaderID, templateId: 1 };
+    }
+  }
+  
+  // Try KCP (ID: 2) - Conv at bytes 0-3, Cmd byte at 4 should be 0x51
+  if (packet.length >= 5) {
+    const cmd = packet[4];
+    if (cmd === 0x51) { // KCP data packet
+      const kcpHeaderID = packet.slice(0, 4);
+      return { headerID: kcpHeaderID, templateId: 2 };
+    }
+  }
+  
+  // Fallback: If no signature matches, try KCP (most lenient)
+  if (packet.length >= 4) {
+    const kcpHeaderID = packet.slice(0, 4);
+    return { headerID: kcpHeaderID, templateId: 2 };
+  }
+  
+  return null;
+}

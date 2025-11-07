@@ -321,9 +321,24 @@ server.on('message', async (message, remote) => {
     const newSocket = dgram.createSocket('udp4');
     
     // Extract headerID from clientID (protocol-specific)
-    // QUIC: first 8 bytes, KCP: first 4 bytes, Gaming: first 4 bytes
-    const headerID = clientIDBuffer.slice(0, template.id === 1 ? 8 : 4).toString('hex');
-    logger.info(`HeaderID: ${headerID}`);
+    let headerIDLength: number;
+    switch (template.id) {
+      case 1: // QUIC
+        headerIDLength = 8;
+        break;
+      case 2: // KCP
+        headerIDLength = 4;
+        break;
+      case 3: // Generic Gaming
+        headerIDLength = 4;
+        break;
+      default:
+        logger.error(`Unknown template ID: ${template.id}`);
+        return;
+    }
+    
+    const headerID = clientIDBuffer.slice(0, headerIDLength).toString('hex');
+    logger.info(`HeaderID: ${headerID} (${headerIDLength} bytes for ${template.name})`);
     
     // Create session
     const session: ClientSession = {

@@ -282,7 +282,7 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
           }
         }
 
-      } else if (remote.port === LOCALWG_PORT) {
+      } else if (remote.address === LOCALWG_ADDRESS && remote.port === LOCALWG_PORT) {
         sendToNewServer(message);
       } else if (remote.port === newServerPort) {
         // Update last received time when we get data from server

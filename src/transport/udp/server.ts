@@ -288,7 +288,7 @@ server.on('message', async (message, remote) => {
     addClientNum(HOST_NAME);
     // Handle messages from WireGuard
     newSocket.on('message', (wgMessage, wgRemote) => {
-      if (wgRemote.address === LOCALWG_ADDRESS) {
+      if (wgRemote.address === LOCALWG_ADDRESS && wgRemote.port === LOCALWG_PORT) {
         const session = activeSessions.get(clientID);
         if (!session) return;
         

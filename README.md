@@ -86,14 +86,22 @@ npm test
 ### Project Structure
 
 ```
-src/
-├── core/              # Obfuscation engine
-├── crypto/            # Encryption layer
-├── transport/udp/     # UDP protocol implementation
-├── api/               # Backend integration
-├── config/            # Configuration management
-├── utils/             # Utilities and logging
-└── types/             # TypeScript types
+morphProtocol/
+├── src/                    # TypeScript server
+│   ├── core/              # Obfuscation engine
+│   ├── crypto/            # Encryption layer
+│   ├── transport/udp/     # UDP protocol implementation
+│   ├── api/               # Backend integration
+│   ├── config/            # Configuration management
+│   ├── utils/             # Utilities and logging
+│   └── types/             # TypeScript types
+├── tests/                 # Server tests
+├── android/
+│   ├── plugin/           # Android Capacitor plugin
+│   └── demo-app/         # Android demo app
+└── ios/
+    ├── plugin/           # iOS Capacitor plugin
+    └── demo-app/         # iOS demo app (symlink to android/demo-app)
 ```
 
 ## How It Works

@@ -356,36 +356,6 @@ server.on('message', async (message, remote) => {
           );
           const deobfuscatedData = session.obfuscator.deobfuscation(obfuscatedArrayBuffer);
           
-          // DEBUG MODE: Log received data for verification (check AFTER deobfuscation)
-          if (config.debugMode && deobfuscatedData.length === 256) {
-            logger.info('=== DEBUG MODE: Received test data ===');
-            logger.info(`[DEBUG] After template decapsulation (${obfuscatedData.length} bytes):`);
-            logger.info(`[DEBUG]   First 32 bytes: ${Buffer.from(obfuscatedData).slice(0, 32).toString('hex')}`);
-          }
-          
-          // DEBUG MODE: Log final deobfuscated data
-          if (config.debugMode && deobfuscatedData.length === 256) {
-            logger.info(`[DEBUG] After deobfuscation (${deobfuscatedData.length} bytes):`);
-            logger.info(`[DEBUG]   First 32 bytes: ${Buffer.from(deobfuscatedData).slice(0, 32).toString('hex')}`);
-            logger.info(`[DEBUG]   Last 32 bytes: ${Buffer.from(deobfuscatedData).slice(-32).toString('hex')}`);
-            logger.info(`[DEBUG]   Full hex: ${Buffer.from(deobfuscatedData).toString('hex')}`);
-            
-            // Verify data integrity
-            let isValid = true;
-            for (let i = 0; i < 256; i++) {
-              if (deobfuscatedData[i] !== i) {
-                isValid = false;
-                logger.error(`[DEBUG] Data mismatch at byte ${i}: expected ${i}, got ${deobfuscatedData[i]}`);
-                break;
-              }
-            }
-            if (isValid) {
-              logger.info('[DEBUG] ✅ Data integrity verified! All bytes match expected pattern (0x00-0xFF)');
-            } else {
-              logger.error('[DEBUG] ❌ Data integrity check FAILED!');
-            }
-          }
-          
           logger.debug(`[Client→WG] After deobfuscation: ${deobfuscatedData.length} bytes, sending to WireGuard ${LOCALWG_ADDRESS}:${LOCALWG_PORT}`);
           
           newSocket.send(deobfuscatedData, 0, deobfuscatedData.length, LOCALWG_PORT, LOCALWG_ADDRESS, (error) => {

@@ -396,7 +396,7 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
         if (error) {
           logger.error('Failed to send data to local-wg server:', error);
         } else {
-          //logger.info('Data sent to local-wg server');
+          logger.info('Data sent to local-wg server');
         }
       });
     }
@@ -484,4 +484,4 @@ export function udpClientStatus(): boolean {
   return clientOpenStatus
 }
 
-startUdpClient('127.0.0.1:12301:f47ac10b-58cc-4372-a567-0e02b2c3d479', 'pUoiyHLZgKAD/knh4I9/bieYLeSIgIE34w0lDNnb+AI=:tnMnyJMxZ7+RoL4g7sTxJQ==')
+startUdpClient('155.138.207.53:12301:f47ac10b-58cc-4372-a567-0e02b2c3d479', 'WAsP4rI7CPqdanJm2ftacD8VgAr5jPasFOdXvZVgZrg=:cx9EgLe36lndE2U6qEv3cw==')

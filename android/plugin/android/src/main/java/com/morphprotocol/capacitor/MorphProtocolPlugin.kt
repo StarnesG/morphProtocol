@@ -50,7 +50,7 @@ class MorphProtocolPlugin : Plugin() {
             val password = call.getString("password", "bumoyu123")
 
             // Create configuration
-            val config = ClientConfig(
+            val config = ClientConfig (
                 remoteAddress = remoteAddress,
                 remotePort = remotePort,
                 userId = userId,

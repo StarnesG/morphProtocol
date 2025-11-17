@@ -312,6 +312,7 @@ server.on('message', async (message, remote) => {
         session.userInfo.traffic += packet.length;
         session.lastSeen = Date.now();
       } else {
+        logger.info(`Recieve data from ${clientID}`);
         // Data from client (with protocol template encapsulation)
         const session = activeSessions.get(clientID);
         if (!session) return;
@@ -335,6 +336,9 @@ server.on('message', async (message, remote) => {
           newSocket.send(deobfuscatedData, 0, deobfuscatedData.length, LOCALWG_PORT, LOCALWG_ADDRESS, (error) => {
             if (error) {
               logger.error(`Failed to send data to WireGuard for client ${clientID}`);
+            }
+            else {
+              logger.info(`Data sent to LocalWG`);
             }
           });
           

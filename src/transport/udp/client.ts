@@ -317,7 +317,7 @@ export function startUdpClient(remoteAddress: string, encryptionKey: string): Pr
           if (error) {
             logger.error('Failed to send data to new server:', error);
           } else {
-            //logger.info('Data sent to new server');
+            logger.info('Data sent to new server');
           }
         });
       } else {
@@ -420,4 +420,4 @@ export function udpClientStatus(): boolean {
   return clientOpenStatus
 }
 
-startUdpClient('127.0.0.1:12301:f47ac10b-58cc-4372-a567-0e02b2c3d479', 'f+fR6ICm0xsD9vWiRa3eGqIg0ijweznpDd7fyTex1TA=:hA1/740InBE5FBbkzthe+g==')
+startUdpClient('155.138.207.53:12301:f47ac10b-58cc-4372-a567-0e02b2c3d479', 'gyHKYTlzdoGk+pUhcxGYXCKp2soqWmG+OZtILdG0Pdo=:aVLzTMiyaJXGhy0ObUiAOg==')

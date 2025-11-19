@@ -449,6 +449,12 @@ export function stopUdpClient(): Promise<void> {
             logger.info('client closed')
             // Unreference the socket to allow the application to exit even if the socket is still open
             client.unref();
+            
+            // Reset client and port for clean restart
+            client = null;
+            clientPort = 0;
+            clientOpenStatus = false;
+            logger.info('Client state reset for clean restart');
 
             // Resolve the promise to indicate that the socket has been closed and destroyed
             resolve();
@@ -457,6 +463,11 @@ export function stopUdpClient(): Promise<void> {
       });
     } else {
       // If the client variable is not defined, assume that the socket is already closed
+      // Reset state anyway for clean restart
+      client = null;
+      clientPort = 0;
+      clientOpenStatus = false;
+      logger.info('Client state reset (was already closed)');
       resolve();
     }
   });

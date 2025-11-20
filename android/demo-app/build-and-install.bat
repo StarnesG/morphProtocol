@@ -16,7 +16,27 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/4] Syncing Capacitor...
+echo [2/4] Checking Android platform...
+if not exist "android" (
+    echo Android platform not found. Adding it now...
+    call npx cap add android
+    if errorlevel 1 (
+        echo.
+        echo ❌ Failed to add Android platform!
+        pause
+        exit /b 1
+    )
+    echo.
+    echo Updating Gradle wrapper for Java 21 compatibility...
+    cd android
+    (
+        echo distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-all.zip
+    ) > gradle\wrapper\gradle-wrapper.properties
+    cd ..
+)
+
+echo.
+echo [3/4] Syncing Capacitor...
 call npx cap sync
 if errorlevel 1 (
     echo.
@@ -26,7 +46,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/4] Building Android APK...
+echo [4/5] Building Android APK...
 cd android
 call gradlew.bat assembleDebug
 if errorlevel 1 (
@@ -39,7 +59,7 @@ if errorlevel 1 (
 cd ..
 
 echo.
-echo [4/4] Installing on device...
+echo [5/5] Installing on device...
 echo Checking for connected devices...
 adb devices
 echo.

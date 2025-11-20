@@ -31,11 +31,11 @@
   "scripts": {
     "verify": "npm run verify:android",
     "verify:android": "cd android && ./gradlew clean build test && cd ..",
-    "build": "npm run clean && npm run docgen && tsc && rollup -c rollup.config.js",
+    "build": "npm run clean && tsc && rollup -c rollup.config.js && npm run docgen",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
     "prepublishOnly": "npm run build",
-    "docgen": "docgen --api MorphProtocolPlugin --output-readme README.md --output-json dist/docs.json"
+    "docgen": "docgen --api MorphProtocolPlugin --output-readme README.md --output-json dist/docs.json || echo 'Warning: docgen failed, continuing...'"
   },
   "devDependencies": {
     "@capacitor/android": "^5.0.0",

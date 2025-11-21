@@ -286,8 +286,9 @@ class MorphUdpClient(private val config: ClientConfig) {
             println("Inactivity detected: ${timeSinceLastReceived}ms since last packet")
             println("Attempting to reconnect with NEW clientID and packet pattern...")
             
-            // Cancel heartbeat
-            heartbeatJob?.cancel()
+            // Stop timers
+            stopHeartbeat()
+            stopInactivityCheck()
             
             // Reset server port
             val oldPort = newServerPort

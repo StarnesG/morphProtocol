@@ -1,5 +1,7 @@
 package com.morphprotocol.client.network
 
+import android.content.Context
+import android.util.Log
 import com.google.gson.Gson
 import com.morphprotocol.client.ConnectionResult
 import com.morphprotocol.client.config.ClientConfig
@@ -9,21 +11,26 @@ import com.morphprotocol.client.core.templates.ProtocolTemplate
 import com.morphprotocol.client.core.templates.TemplateFactory
 import com.morphprotocol.client.core.templates.TemplateSelector
 import com.morphprotocol.client.crypto.Encryptor
-import kotlinx.coroutines.*
+
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.security.SecureRandom
 import java.util.Base64
-import java.util.Timer
-import java.util.TimerTask
 import kotlin.random.Random
 
 /**
  * MorphProtocol UDP client implementation.
  * Compatible with TypeScript server.
+ * Uses native Java threads for Doze-resistant background execution.
  */
-class MorphUdpClient(private val config: ClientConfig) {
+class MorphUdpClient(
+    private val config: ClientConfig,
+    private val context: Context
+) {
+    companion object {
+        private const val TAG = "MorphUdpClient"
+    }
     private val gson = Gson()
     private val random = SecureRandom()
     
@@ -36,14 +43,13 @@ class MorphUdpClient(private val config: ClientConfig) {
     private var newServerPort: Int = 0
     private var lastReceivedTime: Long = 0
     
-    private var handshakeJob: Job? = null
-    private var receiveJob: Job? = null
+    // Use native Java threads instead of coroutines (not affected by Doze mode)
+    private var receiveThread: Thread? = null
+    private var handshakeThread: Thread? = null
     
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    
-    // Use java.util.Timer for background execution (not affected by Doze mode)
-    private var heartbeatTimer: Timer? = null
-    private var inactivityCheckTimer: Timer? = null
+    // Use java.util.Timer (works with native threads)
+    private var heartbeatTimer: java.util.Timer? = null
+    private var inactivityCheckTimer: java.util.Timer? = null
     
     init {
         // Generate random 16-byte clientID
@@ -69,11 +75,12 @@ class MorphUdpClient(private val config: ClientConfig) {
     
     /**
      * Start the UDP client.
+     * Runs synchronously, blocking until connection established or timeout.
      */
-    suspend fun start(): ConnectionResult = withContext(Dispatchers.IO) {
+    fun start(): ConnectionResult {
         if (isRunning) {
-            println("Client already running")
-            return@withContext ConnectionResult(
+            Log.w(TAG, "Client already running")
+            return ConnectionResult(
                 success = false,
                 message = "Client already running"
             )
@@ -83,11 +90,14 @@ class MorphUdpClient(private val config: ClientConfig) {
             isRunning = true
             socket = DatagramSocket()
             val localPort = socket!!.localPort
-            println("Client socket bound to port $localPort")
+            Log.d(TAG, "Client socket bound to port $localPort")
             
-            // Start receiving packets
-            receiveJob = scope.launch {
+            // Start receiving packets in a native Java thread (Doze-resistant)
+            receiveThread = Thread {
                 receivePackets()
+            }.apply {
+                name = "MorphUDP-Receive"
+                start()
             }
             
             // Start handshake and wait for connection
@@ -98,7 +108,7 @@ class MorphUdpClient(private val config: ClientConfig) {
             val timeout = config.maxRetries * config.handshakeInterval
             
             while (newServerPort == 0 && System.currentTimeMillis() - startTime < timeout) {
-                delay(100)
+                Thread.sleep(100)  // Use Thread.sleep instead of delay
             }
             
             if (newServerPort == 0) {
@@ -106,14 +116,14 @@ class MorphUdpClient(private val config: ClientConfig) {
                 isRunning = false
                 socket?.close()
                 socket = null
-                return@withContext ConnectionResult(
+                return ConnectionResult(
                     success = false,
                     message = "Connection failed: Handshake timeout"
                 )
             }
             
             // Connection successful
-            return@withContext ConnectionResult(
+            return ConnectionResult(
                 success = true,
                 serverPort = newServerPort,
                 clientId = clientID.toHex(),
@@ -123,7 +133,7 @@ class MorphUdpClient(private val config: ClientConfig) {
             isRunning = false
             socket?.close()
             socket = null
-            return@withContext ConnectionResult(
+            return ConnectionResult(
                 success = false,
                 message = "Connection failed: ${e.message}"
             )
@@ -133,9 +143,9 @@ class MorphUdpClient(private val config: ClientConfig) {
     /**
      * Stop the UDP client.
      */
-    suspend fun stop() = withContext(Dispatchers.IO) {
+    fun stop() {
         if (!isRunning) {
-            return@withContext
+            return
         }
         
         isRunning = false
@@ -144,9 +154,11 @@ class MorphUdpClient(private val config: ClientConfig) {
         stopHeartbeat()
         stopInactivityCheck()
         
-        // Cancel all jobs
-        handshakeJob?.cancel()
-        receiveJob?.cancel()
+        // Stop threads
+        receiveThread?.interrupt()
+        receiveThread = null
+        handshakeThread?.interrupt()
+        handshakeThread = null
         
         // Send close message
         try {
@@ -165,22 +177,31 @@ class MorphUdpClient(private val config: ClientConfig) {
     }
     
     /**
-     * Start handshake process.
+     * Start handshake process using native thread (Doze-resistant).
      */
     private fun startHandshake() {
-        var retryCount = 0
-        
-        handshakeJob = scope.launch {
+        handshakeThread = Thread {
+            var retryCount = 0
+            
             while (isRunning && newServerPort == 0 && retryCount < config.maxRetries) {
                 sendHandshake()
                 retryCount++
-                delay(config.handshakeInterval)
+                
+                try {
+                    Thread.sleep(config.handshakeInterval)
+                } catch (e: InterruptedException) {
+                    Log.d(TAG, "Handshake thread interrupted")
+                    break
+                }
             }
             
-            if (retryCount >= config.maxRetries) {
-                println("Max retries reached, stopping client")
-                stop()
+            if (retryCount >= config.maxRetries && newServerPort == 0) {
+                Log.e(TAG, "Max retries reached, handshake failed")
+                isRunning = false
             }
+        }.apply {
+            name = "MorphUDP-Handshake"
+            start()
         }
     }
     
@@ -208,12 +229,13 @@ class MorphUdpClient(private val config: ClientConfig) {
     }
     
     /**
-     * Start heartbeat mechanism using java.util.Timer (not affected by Doze mode).
+     * Start heartbeat mechanism using java.util.Timer.
+     * Timer runs in its own thread, not affected by Doze when combined with native threads.
      */
     private fun startHeartbeat() {
-        println("Starting heartbeat timer with interval: ${config.heartbeatInterval}ms")
-        heartbeatTimer = Timer("HeartbeatTimer", true).apply {
-            schedule(object : TimerTask() {
+        Log.d(TAG, "Starting heartbeat timer, interval: ${config.heartbeatInterval}ms")
+        heartbeatTimer = java.util.Timer("MorphHeartbeat", false).apply {
+            schedule(object : java.util.TimerTask() {
                 override fun run() {
                     if (isRunning && newServerPort != 0) {
                         sendHeartbeat()
@@ -227,6 +249,7 @@ class MorphUdpClient(private val config: ClientConfig) {
      * Stop heartbeat timer.
      */
     private fun stopHeartbeat() {
+        Log.d(TAG, "Stopping heartbeat")
         heartbeatTimer?.cancel()
         heartbeatTimer = null
     }
@@ -236,23 +259,23 @@ class MorphUdpClient(private val config: ClientConfig) {
      */
     private fun sendHeartbeat() {
         val timestamp = System.currentTimeMillis()
-        println("[$timestamp] Sending heartbeat (Timer-based, Doze-resistant)")
+        Log.d(TAG, "[$timestamp] Sending heartbeat")
         
         val heartbeatMarker = byteArrayOf(0x01)
         val packet = protocolTemplate.encapsulate(heartbeatMarker, clientID)
         protocolTemplate.updateState()
         
         sendToNewServer(packet)
-        println("Heartbeat sent to new server")
+        Log.d(TAG, "Heartbeat sent to new server")
     }
     
     /**
-     * Start inactivity check using java.util.Timer (not affected by Doze mode).
+     * Start inactivity check using java.util.Timer.
      */
     private fun startInactivityCheck() {
-        println("Starting inactivity check timer")
-        inactivityCheckTimer = Timer("InactivityCheckTimer", true).apply {
-            schedule(object : TimerTask() {
+        Log.d(TAG, "Starting inactivity check timer")
+        inactivityCheckTimer = java.util.Timer("MorphInactivityCheck", false).apply {
+            schedule(object : java.util.TimerTask() {
                 override fun run() {
                     if (isRunning && newServerPort != 0) {
                         checkInactivity()
@@ -266,6 +289,7 @@ class MorphUdpClient(private val config: ClientConfig) {
      * Stop inactivity check timer.
      */
     private fun stopInactivityCheck() {
+        Log.d(TAG, "Stopping inactivity check")
         inactivityCheckTimer?.cancel()
         inactivityCheckTimer = null
     }
@@ -275,7 +299,8 @@ class MorphUdpClient(private val config: ClientConfig) {
      */
     private fun checkInactivity() {
         val timestamp = System.currentTimeMillis()
-        println("[$timestamp] Checking inactivity (Timer-based, Doze-resistant)")
+        Log.d(TAG, "[$timestamp] Checking inactivity")
+        
         if (newServerPort == 0 || lastReceivedTime == 0L) {
             return
         }
@@ -319,14 +344,16 @@ class MorphUdpClient(private val config: ClientConfig) {
     
     /**
      * Receive packets from server.
+     * Runs in a native Java thread (not affected by Doze mode).
      */
-    private suspend fun receivePackets() = withContext(Dispatchers.IO) {
+    private fun receivePackets() {
         val buffer = ByteArray(2048)
+        Log.d(TAG, "Receive thread started")
         
-        while (isRunning) {
+        while (isRunning && socket != null && !socket!!.isClosed) {
             try {
                 val packet = DatagramPacket(buffer, buffer.size)
-                socket?.receive(packet)
+                socket?.receive(packet)  // Blocking call - works in native thread during Doze
                 
                 val data = packet.data.copyOfRange(0, packet.length)
                 val remoteAddress = packet.address
@@ -335,10 +362,12 @@ class MorphUdpClient(private val config: ClientConfig) {
                 handleIncomingPacket(data, remoteAddress, remotePort)
             } catch (e: Exception) {
                 if (isRunning) {
-                    println("Error receiving packet: ${e.message}")
+                    Log.e(TAG, "Error receiving packet: ${e.message}")
                 }
             }
         }
+        
+        Log.d(TAG, "Receive thread stopped")
     }
     
     /**
@@ -398,12 +427,12 @@ class MorphUdpClient(private val config: ClientConfig) {
             
             when (decrypted) {
                 "inactivity" -> {
-                    println("Server detected inactivity, closing connection")
-                    scope.launch { stop() }
+                    Log.w(TAG, "Server detected inactivity, closing connection")
+                    stop()
                 }
                 "server_full" -> {
-                    println("Server is full")
-                    scope.launch { stop() }
+                    Log.w(TAG, "Server is full")
+                    stop()
                 }
                 else -> {
                     // Parse JSON response
@@ -424,7 +453,8 @@ class MorphUdpClient(private val config: ClientConfig) {
                         }
                         
                         // Stop handshake and start heartbeat
-                        handshakeJob?.cancel()
+                        handshakeThread?.interrupt()
+                        handshakeThread = null
                         startHeartbeat()
                         
                         // Start inactivity check

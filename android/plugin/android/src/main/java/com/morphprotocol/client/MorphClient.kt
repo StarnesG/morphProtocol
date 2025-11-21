@@ -1,8 +1,8 @@
 package com.morphprotocol.client
 
+import android.content.Context
 import com.morphprotocol.client.config.ClientConfig
 import com.morphprotocol.client.network.MorphUdpClient
-import kotlinx.coroutines.runBlocking
 
 /**
  * Connection result data class.
@@ -18,65 +18,26 @@ data class ConnectionResult(
  * Main MorphProtocol client facade.
  * Provides a simple API for starting and stopping the client.
  */
-class MorphClient(private val config: ClientConfig) {
-    private val udpClient = MorphUdpClient(config)
+class MorphClient(
+    private val config: ClientConfig,
+    private val context: Context
+) {
+    private val udpClient = MorphUdpClient(config, context)
     
     /**
      * Start the client (blocking).
+     * Should be called from a background thread in the service.
      */
-    fun start(): ConnectionResult = runBlocking {
-        udpClient.start()
-    }
-    
-    /**
-     * Start the client (suspending).
-     */
-    suspend fun startAsync(): ConnectionResult {
+    fun start(): ConnectionResult {
         return udpClient.start()
     }
     
     /**
-     * Stop the client (blocking).
+     * Stop the client.
      */
-    fun stop() = runBlocking {
-        udpClient.stop()
-    }
-    
-    /**
-     * Stop the client (suspending).
-     */
-    suspend fun stopAsync() {
+    fun stop() {
         udpClient.stop()
     }
 }
 
-/**
- * Example usage.
- */
-fun main() = runBlocking {
-    val config = ClientConfig(
-        remoteAddress = "192.168.1.100",
-        remotePort = 12301,
-        userId = "user123",
-        encryptionKey = "base64key:base64iv",
-        localWgAddress = "127.0.0.1",
-        localWgPort = 51820
-    )
-    
-    val client = MorphClient(config)
-    
-    println("Starting MorphProtocol client...")
-    client.startAsync()
-    
-    // Keep running
-    println("Client running. Press Ctrl+C to stop.")
-    
-    // Add shutdown hook
-    Runtime.getRuntime().addShutdownHook(Thread {
-        println("\nShutting down...")
-        client.stop()
-    })
-    
-    // Keep main thread alive
-    Thread.currentThread().join()
-}
+

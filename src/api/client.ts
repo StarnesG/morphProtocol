@@ -87,7 +87,7 @@ export const updateServerInfo = async (name: string | undefined, ip: string | un
             data: {
                 name: name,
                 ip: ip,
-                port: port.toString(),
+                udpPort: port.toString(),
                 info: info,
                 status: 'running'
             }

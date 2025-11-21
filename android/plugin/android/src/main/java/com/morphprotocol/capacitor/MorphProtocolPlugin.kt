@@ -1,32 +1,91 @@
 package com.morphprotocol.capacitor
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.Message
+import android.os.Messenger
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
-import com.morphprotocol.client.MorphClient
-import com.morphprotocol.client.config.ClientConfig
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 @CapacitorPlugin(name = "MorphProtocol")
 class MorphProtocolPlugin : Plugin() {
-    private var morphClient: MorphClient? = null
-    private var isConnected = false
-    private var clientId: String? = null
-    private var serverPort: Int? = null
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var serviceMessenger: Messenger? = null
+    private var serviceConnection: ServiceConnection? = null
+    private var isBound = false
 
+    override fun load() {
+        super.load()
+        
+        serviceConnection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                serviceMessenger = Messenger(service)
+                isBound = true
+            }
+            
+            override fun onServiceDisconnected(name: ComponentName?) {
+                serviceMessenger = null
+                isBound = false
+            }
+        }
+        
+        // Start and bind to service
+        startService()
+    }
+    
+    @PluginMethod
+    fun startService(call: PluginCall? = null) {
+        try {
+            val context = activity.applicationContext
+            val intent = Intent(context, MorphProtocolService::class.java)
+            context.startService(intent)
+            context.bindService(intent, serviceConnection!!, Context.BIND_AUTO_CREATE)
+            
+            call?.resolve(JSObject().apply {
+                put("success", true)
+                put("message", "Service started successfully")
+            })
+        } catch (e: Exception) {
+            call?.reject("Failed to start service: ${e.message}")
+        }
+    }
+    
+    @PluginMethod
+    fun stopService(call: PluginCall) {
+        try {
+            val context = activity.applicationContext
+            if (isBound) {
+                context.unbindService(serviceConnection!!)
+                val intent = Intent(context, MorphProtocolService::class.java)
+                context.stopService(intent)
+                serviceMessenger = null
+                isBound = false
+            }
+            
+            call.resolve(JSObject().apply {
+                put("success", true)
+                put("message", "Service stopped successfully")
+            })
+        } catch (e: Exception) {
+            call.reject("Failed to stop service: ${e.message}")
+        }
+    }
+    
     @PluginMethod
     fun connect(call: PluginCall) {
-        if (isConnected) {
-            call.reject("Already connected")
+        if (serviceMessenger == null) {
+            call.reject("Service not connected")
             return
         }
-
+        
         try {
             // Parse connection options
             val remoteAddress = call.getString("remoteAddress")
@@ -37,7 +96,7 @@ class MorphProtocolPlugin : Plugin() {
                 ?: return call.reject("userId is required")
             val encryptionKey = call.getString("encryptionKey")
                 ?: return call.reject("encryptionKey is required")
-
+            
             // Optional parameters with defaults
             val localWgAddress = call.getString("localWgAddress") ?: "127.0.0.1"
             val localWgPort = call.getInt("localWgPort") ?: 51820
@@ -48,75 +107,57 @@ class MorphProtocolPlugin : Plugin() {
             val maxRetries = call.getInt("maxRetries") ?: 10
             val handshakeInterval = call.getLong("handshakeInterval") ?: 5000L
             val password = call.getString("password") ?: "bumoyu123"
-
-            // Create configuration
-            val config = ClientConfig (
-                remoteAddress = remoteAddress,
-                remotePort = remotePort,
-                userId = userId,
-                encryptionKey = encryptionKey,
-                localWgAddress = localWgAddress,
-                localWgPort = localWgPort,
-                obfuscationLayer = obfuscationLayer,
-                paddingLength = paddingLength,
-                heartbeatInterval = heartbeatInterval,
-                inactivityTimeout = inactivityTimeout,
-                maxRetries = maxRetries,
-                handshakeInterval = handshakeInterval,
-                password = password
-            )
-
-            // Create and start client
-            morphClient = MorphClient(config)
-
-            scope.launch {
-                try {
-                    val connectionResult = morphClient?.startAsync()
-                    
-                    if (connectionResult?.success == true) {
-                        isConnected = true
-                        clientId = connectionResult.clientId
-                        serverPort = connectionResult.serverPort
-
-                        // Notify listeners
-                        val event = JSObject()
-                        event.put("type", "connected")
-                        event.put("message", connectionResult.message)
-                        event.put("serverPort", connectionResult.serverPort)
-                        notifyListeners("connected", event)
-
-                        // Return success
-                        val result = JSObject()
-                        result.put("success", true)
-                        result.put("message", connectionResult.message)
-                        result.put("clientId", connectionResult.clientId)
-                        result.put("serverPort", connectionResult.serverPort)
-                        call.resolve(result)
-                    } else {
-                        isConnected = false
-                        morphClient = null
-
-                        // Notify listeners
-                        val event = JSObject()
-                        event.put("type", "error")
-                        event.put("message", connectionResult?.message ?: "Connection failed")
-                        notifyListeners("error", event)
-
-                        call.reject(connectionResult?.message ?: "Connection failed")
-                    }
-                } catch (e: Exception) {
-                    isConnected = false
-                    morphClient = null
-
-                    // Notify listeners
-                    val event = JSObject()
-                    event.put("type", "error")
-                    event.put("message", "Connection failed: ${e.message}")
-                    notifyListeners("error", event)
-
-                    call.reject("Connection failed: ${e.message}")
-                }
+            
+            // Create message with connection parameters
+            val message = Message.obtain(null, MorphProtocolService.MSG_CONNECT)
+            message.data = Bundle().apply {
+                putString(MorphProtocolService.KEY_REMOTE_ADDRESS, remoteAddress)
+                putInt(MorphProtocolService.KEY_REMOTE_PORT, remotePort)
+                putString(MorphProtocolService.KEY_USER_ID, userId)
+                putString(MorphProtocolService.KEY_ENCRYPTION_KEY, encryptionKey)
+                putString(MorphProtocolService.KEY_LOCAL_WG_ADDRESS, localWgAddress)
+                putInt(MorphProtocolService.KEY_LOCAL_WG_PORT, localWgPort)
+                putInt(MorphProtocolService.KEY_OBFUSCATION_LAYER, obfuscationLayer)
+                putInt(MorphProtocolService.KEY_PADDING_LENGTH, paddingLength)
+                putLong(MorphProtocolService.KEY_HEARTBEAT_INTERVAL, heartbeatInterval)
+                putLong(MorphProtocolService.KEY_INACTIVITY_TIMEOUT, inactivityTimeout)
+                putInt(MorphProtocolService.KEY_MAX_RETRIES, maxRetries)
+                putLong(MorphProtocolService.KEY_HANDSHAKE_INTERVAL, handshakeInterval)
+                putString(MorphProtocolService.KEY_PASSWORD, password)
             }
+            
+            message.replyTo = Messenger(object : Handler(Looper.getMainLooper()) {
+                override fun handleMessage(msg: Message) {
+                    when (msg.what) {
+                        MorphProtocolService.MSG_CONNECT_SUCCESS -> {
+                            val data = msg.data
+                            val result = JSObject().apply {
+                                put("success", data.getBoolean(MorphProtocolService.KEY_SUCCESS))
+                                put("message", data.getString(MorphProtocolService.KEY_MESSAGE))
+                                put("clientId", data.getString(MorphProtocolService.KEY_CLIENT_ID))
+                                put("serverPort", data.getInt(MorphProtocolService.KEY_SERVER_PORT))
+                            }
+                            
+                            // Notify listeners
+                            notifyListeners("connected", result)
+                            call.resolve(result)
+                        }
+                        MorphProtocolService.MSG_CONNECT_ERROR -> {
+                            val data = msg.data
+                            val message = data.getString(MorphProtocolService.KEY_MESSAGE) ?: "Connection failed"
+                            
+                            // Notify listeners
+                            notifyListeners("error", JSObject().apply {
+                                put("type", "error")
+                                put("message", message)
+                            })
+                            call.reject(message)
+                        }
+                    }
+                }
+            })
+            
+            serviceMessenger?.send(message)
         } catch (e: Exception) {
             call.reject("Failed to connect: ${e.message}")
         }
@@ -124,57 +165,86 @@ class MorphProtocolPlugin : Plugin() {
 
     @PluginMethod
     fun disconnect(call: PluginCall) {
-        if (!isConnected) {
-            call.reject("Not connected")
+        if (serviceMessenger == null) {
+            call.reject("Service not connected")
             return
         }
-
-        scope.launch {
-            try {
-                morphClient?.stopAsync()
-                isConnected = false
-                clientId = null
-                serverPort = null
-                morphClient = null
-
-                // Notify listeners
-                val event = JSObject()
-                event.put("type", "disconnected")
-                event.put("message", "Disconnected from MorphProtocol server")
-                notifyListeners("disconnected", event)
-
-                val result = JSObject()
-                result.put("success", true)
-                result.put("message", "Disconnected successfully")
-                call.resolve(result)
-            } catch (e: Exception) {
-                call.reject("Failed to disconnect: ${e.message}")
-            }
+        
+        try {
+            val message = Message.obtain(null, MorphProtocolService.MSG_DISCONNECT)
+            message.replyTo = Messenger(object : Handler(Looper.getMainLooper()) {
+                override fun handleMessage(msg: Message) {
+                    when (msg.what) {
+                        MorphProtocolService.MSG_DISCONNECT_SUCCESS -> {
+                            val data = msg.data
+                            val result = JSObject().apply {
+                                put("success", data.getBoolean(MorphProtocolService.KEY_SUCCESS))
+                                put("message", data.getString(MorphProtocolService.KEY_MESSAGE))
+                            }
+                            
+                            // Notify listeners
+                            notifyListeners("disconnected", result)
+                            call.resolve(result)
+                        }
+                        MorphProtocolService.MSG_DISCONNECT_ERROR -> {
+                            val data = msg.data
+                            val message = data.getString(MorphProtocolService.KEY_MESSAGE) ?: "Disconnection failed"
+                            call.reject(message)
+                        }
+                    }
+                }
+            })
+            
+            serviceMessenger?.send(message)
+        } catch (e: Exception) {
+            call.reject("Failed to disconnect: ${e.message}")
         }
     }
-
+    
     @PluginMethod
     fun getStatus(call: PluginCall) {
-        val result = JSObject()
-        result.put("connected", isConnected)
-        result.put("status", if (isConnected) "Connected" else "Disconnected")
-
-        if (isConnected) {
-            clientId?.let { result.put("clientId", it) }
-            serverPort?.let { result.put("serverPort", it) }
+        if (serviceMessenger == null) {
+            call.reject("Service not connected")
+            return
         }
-
-        call.resolve(result)
+        
+        try {
+            val message = Message.obtain(null, MorphProtocolService.MSG_GET_STATUS)
+            message.replyTo = Messenger(object : Handler(Looper.getMainLooper()) {
+                override fun handleMessage(msg: Message) {
+                    when (msg.what) {
+                        MorphProtocolService.MSG_STATUS_RESPONSE -> {
+                            val data = msg.data
+                            val result = JSObject().apply {
+                                put("connected", data.getBoolean(MorphProtocolService.KEY_CONNECTED))
+                                put("status", data.getString(MorphProtocolService.KEY_STATUS))
+                                if (data.containsKey(MorphProtocolService.KEY_CLIENT_ID)) {
+                                    put("clientId", data.getString(MorphProtocolService.KEY_CLIENT_ID))
+                                }
+                                if (data.containsKey(MorphProtocolService.KEY_SERVER_PORT)) {
+                                    put("serverPort", data.getInt(MorphProtocolService.KEY_SERVER_PORT))
+                                }
+                            }
+                            call.resolve(result)
+                        }
+                    }
+                }
+            })
+            
+            serviceMessenger?.send(message)
+        } catch (e: Exception) {
+            call.reject("Failed to get status: ${e.message}")
+        }
     }
-
+    
     override fun handleOnDestroy() {
         super.handleOnDestroy()
-        scope.launch {
-            try {
-                morphClient?.stopAsync()
-            } catch (e: Exception) {
-                // Ignore errors during cleanup
+        try {
+            if (isBound) {
+                activity.applicationContext.unbindService(serviceConnection!!)
             }
+        } catch (e: Exception) {
+            // Ignore errors during cleanup
         }
     }
 }

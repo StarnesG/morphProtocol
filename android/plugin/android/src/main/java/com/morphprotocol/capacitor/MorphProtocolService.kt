@@ -1,7 +1,12 @@
 package com.morphprotocol.capacitor
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -9,7 +14,9 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
+import android.os.PowerManager
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import com.morphprotocol.client.ConnectionResult
 import com.morphprotocol.client.MorphClient
 import com.morphprotocol.client.config.ClientConfig
@@ -27,6 +34,8 @@ class MorphProtocolService : Service() {
     
     companion object {
         private const val TAG = "MorphProtocolService"
+        private const val NOTIFICATION_ID = 1
+        private const val CHANNEL_ID = "MorphProtocolVPN"
         
         // Message types
         const val MSG_CONNECT = 1
@@ -71,15 +80,26 @@ class MorphProtocolService : Service() {
     private var isConnected = false
     private var clientId: String? = null
     private var serverPort: Int? = null
+    private var wakeLock: PowerManager.WakeLock? = null
     
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service created")
+        
+        // Create notification channel for Android O+
+        createNotificationChannel()
+        
+        // Start as foreground service
+        startForeground(NOTIFICATION_ID, createNotification("MorphProtocol VPN", "Initializing..."))
+        
+        // Acquire wake lock to prevent CPU sleep
+        acquireWakeLock()
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Service started")
-        return START_NOT_STICKY
+        // START_STICKY ensures service is restarted if killed by system
+        return START_STICKY
     }
     
     override fun onBind(intent: Intent?): IBinder {
@@ -91,6 +111,70 @@ class MorphProtocolService : Service() {
         super.onDestroy()
         Log.d(TAG, "Service destroyed")
         disconnectClient()
+        releaseWakeLock()
+    }
+    
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "MorphProtocol VPN",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "VPN connection status"
+                setShowBadge(false)
+            }
+            
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+    
+    private fun createNotification(title: String, text: String): Notification {
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        
+        return builder.build()
+    }
+    
+    private fun updateNotification(title: String, text: String) {
+        val notification = createNotification(title, text)
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+    
+    private fun acquireWakeLock() {
+        try {
+            val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "MorphProtocol::VPNWakeLock"
+            ).apply {
+                acquire()
+            }
+            Log.d(TAG, "Wake lock acquired")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to acquire wake lock: ${e.message}")
+        }
+    }
+    
+    private fun releaseWakeLock() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    Log.d(TAG, "Wake lock released")
+                }
+            }
+            wakeLock = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to release wake lock: ${e.message}")
+        }
     }
     
     private fun connectClient(data: Bundle, replyTo: Messenger?) {
@@ -144,6 +228,9 @@ class MorphProtocolService : Service() {
             // Create and start client
             morphClient = MorphClient(config)
             
+            // Update notification
+            updateNotification("MorphProtocol VPN", "Connecting...")
+            
             scope.launch {
                 try {
                     val result = morphClient?.startAsync()
@@ -154,6 +241,9 @@ class MorphProtocolService : Service() {
                         serverPort = result.serverPort
                         
                         Log.d(TAG, "Connected successfully. Server port: ${result.serverPort}")
+                        
+                        // Update notification
+                        updateNotification("MorphProtocol VPN", "Connected to ${config.remoteAddress}")
                         
                         sendResponse(replyTo, MSG_CONNECT_SUCCESS, Bundle().apply {
                             putBoolean(KEY_SUCCESS, true)
@@ -167,6 +257,9 @@ class MorphProtocolService : Service() {
                         
                         Log.e(TAG, "Connection failed: ${result?.message}")
                         
+                        // Update notification
+                        updateNotification("MorphProtocol VPN", "Connection failed")
+                        
                         sendResponse(replyTo, MSG_CONNECT_ERROR, Bundle().apply {
                             putBoolean(KEY_SUCCESS, false)
                             putString(KEY_MESSAGE, result?.message ?: "Connection failed")
@@ -177,6 +270,9 @@ class MorphProtocolService : Service() {
                     morphClient = null
                     
                     Log.e(TAG, "Connection exception: ${e.message}", e)
+                    
+                    // Update notification
+                    updateNotification("MorphProtocol VPN", "Connection error")
                     
                     sendResponse(replyTo, MSG_CONNECT_ERROR, Bundle().apply {
                         putBoolean(KEY_SUCCESS, false)
@@ -204,6 +300,9 @@ class MorphProtocolService : Service() {
             return
         }
         
+        // Update notification
+        updateNotification("MorphProtocol VPN", "Disconnecting...")
+        
         scope.launch {
             try {
                 morphClient?.stopAsync()
@@ -213,6 +312,9 @@ class MorphProtocolService : Service() {
                 morphClient = null
                 
                 Log.d(TAG, "Disconnected successfully")
+                
+                // Update notification
+                updateNotification("MorphProtocol VPN", "Disconnected")
                 
                 replyTo?.let {
                     sendResponse(it, MSG_DISCONNECT_SUCCESS, Bundle().apply {

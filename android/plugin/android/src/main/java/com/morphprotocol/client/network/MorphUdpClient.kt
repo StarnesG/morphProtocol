@@ -601,6 +601,10 @@ class MorphUdpClient(
      */
     private fun handleWireGuardPacket(data: ByteArray) {
         if (newServerPort != 0) {
+            // Log first 16 bytes of original data for debugging
+            val preview = data.take(16).joinToString(" ") { "%02x".format(it) }
+            Log.d(TAG, "[WG→Server] Original WG data (${data.size} bytes): $preview...")
+            
             Log.d(TAG, "[WG→Server] Obfuscating ${data.size} bytes")
             // Obfuscate and send to server
             val obfuscated = obfuscator.obfuscate(data)
@@ -672,6 +676,7 @@ class MorphUdpClient(
             val address = InetAddress.getByName(config.remoteAddress)
             val packet = DatagramPacket(data, data.size, address, newServerPort)
             socket?.send(packet)
+            Log.d(TAG, "Sent ${data.size} bytes to ${address.hostAddress}:$newServerPort")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send to new server: ${e.message}", e)
             e.printStackTrace()

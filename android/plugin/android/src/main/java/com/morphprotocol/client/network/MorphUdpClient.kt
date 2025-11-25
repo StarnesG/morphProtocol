@@ -53,6 +53,10 @@ class MorphUdpClient(
     private var newServerPort: Int = 0
     private var lastReceivedTime: Long = 0
     
+    // Store obfuscation parameters to send in handshake
+    private var obfuscationKey: Int = 0
+    private var obfuscationFnInitor: Int = 0
+    
     // Callback for connection success
     private var onConnectedCallback: ((ConnectionResult) -> Unit)? = null
     
@@ -108,12 +112,12 @@ class MorphUdpClient(
         protocolTemplate = TemplateFactory.createTemplate(templateId)
         println("Selected protocol template: ${protocolTemplate.name} (ID: $templateId)")
         
-        // Initialize obfuscator
-        val key = Random.nextInt(256)
-        val fnInitor = FunctionInitializer.generateInitializerId()
-        obfuscator = Obfuscator(key, config.obfuscationLayer, config.paddingLength, fnInitor)
+        // Initialize obfuscator and store parameters
+        obfuscationKey = Random.nextInt(256)
+        obfuscationFnInitor = FunctionInitializer.generateInitializerId()
+        obfuscator = Obfuscator(obfuscationKey, config.obfuscationLayer, config.paddingLength, obfuscationFnInitor)
         
-        println("Obfuscation parameters: key=$key, layer=${config.obfuscationLayer}, padding=${config.paddingLength}, fnInitor=$fnInitor")
+        println("Obfuscation parameters: key=$obfuscationKey, layer=${config.obfuscationLayer}, padding=${config.paddingLength}, fnInitor=$obfuscationFnInitor")
     }
     
     /**
@@ -239,10 +243,10 @@ class MorphUdpClient(
     private fun sendHandshake() {
         val handshakeData = mapOf(
             "clientID" to Base64.getEncoder().encodeToString(clientID),
-            "key" to Random.nextInt(256),
+            "key" to obfuscationKey,  // Use stored key
             "obfuscationLayer" to config.obfuscationLayer,
             "randomPadding" to config.paddingLength,
-            "fnInitor" to FunctionInitializer.generateInitializerId(),
+            "fnInitor" to obfuscationFnInitor,  // Use stored fnInitor
             "templateId" to protocolTemplate.id,
             "templateParams" to protocolTemplate.getParams(),
             "userId" to config.userId,
@@ -449,11 +453,11 @@ class MorphUdpClient(
             protocolTemplate = TemplateFactory.createTemplate(newTemplateId)
             println("New template: ${protocolTemplate.name} (ID: $newTemplateId)")
             
-            // Generate NEW obfuscation parameters
-            val newKey = Random.nextInt(256)
-            val newFnInitor = FunctionInitializer.generateInitializerId()
-            obfuscator = Obfuscator(newKey, config.obfuscationLayer, config.paddingLength, newFnInitor)
-            println("New obfuscation parameters: key=$newKey, fnInitor=$newFnInitor")
+            // Generate NEW obfuscation parameters and store them
+            obfuscationKey = Random.nextInt(256)
+            obfuscationFnInitor = FunctionInitializer.generateInitializerId()
+            obfuscator = Obfuscator(obfuscationKey, config.obfuscationLayer, config.paddingLength, obfuscationFnInitor)
+            println("New obfuscation parameters: key=$obfuscationKey, fnInitor=$obfuscationFnInitor")
             
             // Send handshake to reconnect
             startHandshake()

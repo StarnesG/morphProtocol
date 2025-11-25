@@ -253,6 +253,8 @@ class MorphUdpClient(
             "publicKey" to "not implemented"
         )
         
+        Log.d(TAG, "Handshake params: key=$obfuscationKey, layer=${config.obfuscationLayer}, padding=${config.paddingLength}, fnInitor=$obfuscationFnInitor, templateId=${protocolTemplate.id}")
+        
         val json = gson.toJson(handshakeData)
         val encrypted = encryptor.simpleEncrypt(json)
         
@@ -608,11 +610,14 @@ class MorphUdpClient(
             // Log first 16 bytes of original data for debugging
             val preview = data.take(16).joinToString(" ") { "%02x".format(it) }
             Log.d(TAG, "[WG→Server] Original WG data (${data.size} bytes): $preview...")
+            Log.d(TAG, "[WG→Server] Using obfuscation params: key=$obfuscationKey, fnInitor=$obfuscationFnInitor")
             
             Log.d(TAG, "[WG→Server] Obfuscating ${data.size} bytes")
             // Obfuscate and send to server
             val obfuscated = obfuscator.obfuscate(data)
             Log.d(TAG, "[WG→Server] After obfuscation: ${obfuscated.size} bytes")
+            val obfPreview = obfuscated.take(16).joinToString(" ") { "%02x".format(it) }
+            Log.d(TAG, "[WG→Server] Obfuscated data preview: $obfPreview...")
             
             val packet = protocolTemplate.encapsulate(obfuscated, clientID)
             Log.d(TAG, "[WG→Server] After template: ${packet.size} bytes, sending to ${config.remoteAddress}:$newServerPort")

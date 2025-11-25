@@ -147,9 +147,9 @@ class MorphProtocolService : Service() {
             
             connectThread = Thread {
                 try {
-                    val result = morphClient?.start()
-                    
-                    if (result?.success == true) {
+                    // Start client with callback for connection success
+                    morphClient?.start { result ->
+                        // This callback is invoked when handshake succeeds
                         isConnected = true
                         clientId = result.clientId
                         serverPort = result.serverPort
@@ -162,17 +162,12 @@ class MorphProtocolService : Service() {
                             putString(KEY_CLIENT_ID, result.clientId)
                             putInt(KEY_SERVER_PORT, result.serverPort)
                         })
-                    } else {
-                        isConnected = false
-                        morphClient = null
-                        
-                        Log.e(TAG, "Connection failed: ${result?.message}")
-                        
-                        sendResponse(replyTo, MSG_CONNECT_ERROR, Bundle().apply {
-                            putBoolean(KEY_SUCCESS, false)
-                            putString(KEY_MESSAGE, result?.message ?: "Connection failed")
-                        })
                     }
+                    
+                    // start() blocks here in receive loop until stop() is called
+                    // When it returns, the connection has been stopped
+                    Log.d(TAG, "Client stopped")
+                    
                 } catch (e: Exception) {
                     isConnected = false
                     morphClient = null

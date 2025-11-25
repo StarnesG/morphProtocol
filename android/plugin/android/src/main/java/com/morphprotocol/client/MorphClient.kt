@@ -27,9 +27,11 @@ class MorphClient(
     /**
      * Start the client (blocking).
      * Should be called from a background thread in the service.
+     * 
+     * @param onConnected Callback invoked when connection is established
      */
-    fun start(): ConnectionResult {
-        return udpClient.start()
+    fun start(onConnected: ((ConnectionResult) -> Unit)? = null): ConnectionResult {
+        return udpClient.start(onConnected)
     }
     
     /**

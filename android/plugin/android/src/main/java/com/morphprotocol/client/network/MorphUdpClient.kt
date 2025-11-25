@@ -52,6 +52,9 @@ class MorphUdpClient(
     private var newServerPort: Int = 0
     private var lastReceivedTime: Long = 0
     
+    // Callback for connection success
+    private var onConnectedCallback: ((ConnectionResult) -> Unit)? = null
+    
     // Use java.util.Timer for handshake (short-term, acceptable)
     private var handshakeTimer: java.util.Timer? = null
     
@@ -116,8 +119,11 @@ class MorphUdpClient(
      * Start the UDP client.
      * Runs in the calling thread (like old plugin).
      * This function blocks and runs the receive loop.
+     * 
+     * @param onConnected Callback invoked when handshake succeeds and connection is established
      */
-    fun start(): ConnectionResult {
+    fun start(onConnected: ((ConnectionResult) -> Unit)? = null): ConnectionResult {
+        this.onConnectedCallback = onConnected
         if (isRunning) {
             Log.w(TAG, "Client already running")
             return ConnectionResult(
@@ -572,6 +578,14 @@ class MorphUdpClient(
                         lastReceivedTime = System.currentTimeMillis()
                         startInactivityCheck()
                         println("Inactivity detection started (timeout: ${config.inactivityTimeout}ms)")
+                        
+                        // Notify connection success via callback
+                        onConnectedCallback?.invoke(ConnectionResult(
+                            success = true,
+                            serverPort = newServerPort,
+                            clientId = clientID.toHex(),
+                            message = "Connected successfully"
+                        ))
                     }
                 }
             }

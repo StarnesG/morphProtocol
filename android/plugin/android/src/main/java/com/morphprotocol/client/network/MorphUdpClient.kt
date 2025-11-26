@@ -620,9 +620,16 @@ class MorphUdpClient(
      */
     private fun handleWireGuardPacket(data: ByteArray) {
         if (newServerPort != 0) {
-            // Log first 16 bytes of original data for debugging
-            val preview = data.take(16).joinToString(" ") { "%02x".format(it) }
-            Log.d(TAG, "[WG→Server] Original WG data (${data.size} bytes): $preview...")
+            // Log ALL bytes for complete verification
+            val fullHex = data.joinToString(" ") { "%02x".format(it) }
+            Log.d(TAG, "[TEST-WG→Server] Original WG packet (${data.size} bytes):")
+            Log.d(TAG, "[TEST-WG→Server] HEX: $fullHex")
+            
+            // Calculate SHA256 for quick comparison
+            val sha256 = java.security.MessageDigest.getInstance("SHA-256")
+            val hash = sha256.digest(data).joinToString("") { "%02x".format(it) }
+            Log.d(TAG, "[TEST-WG→Server] SHA256: $hash")
+            
             Log.d(TAG, "[WG→Server] Using obfuscation params: key=$obfuscationKey, fnInitor=$obfuscationFnInitor")
             
             Log.d(TAG, "[WG→Server] Obfuscating ${data.size} bytes")
@@ -664,6 +671,16 @@ class MorphUdpClient(
         // Deobfuscate
         val deobfuscated = obfuscator.deobfuscate(obfuscatedData)
         Log.d(TAG, "[Server→WG] After deobfuscation: ${deobfuscated.size} bytes, sending to WireGuard ${config.localWgAddress}:${config.localWgPort}")
+        
+        // Log ALL bytes of deobfuscated packet for verification
+        val fullHex = deobfuscated.joinToString(" ") { "%02x".format(it) }
+        Log.d(TAG, "[TEST-Server→WG] Deobfuscated packet (${deobfuscated.size} bytes):")
+        Log.d(TAG, "[TEST-Server→WG] HEX: $fullHex")
+        
+        // Calculate SHA256 for quick comparison
+        val sha256 = java.security.MessageDigest.getInstance("SHA-256")
+        val hash = sha256.digest(deobfuscated).joinToString("") { "%02x".format(it) }
+        Log.d(TAG, "[TEST-Server→WG] SHA256: $hash")
         
         // Send to local WireGuard
         sendToLocalWireGuard(deobfuscated)

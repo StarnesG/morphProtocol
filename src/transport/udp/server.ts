@@ -313,6 +313,16 @@ server.on('message', async (message, remote) => {
         
         logger.debug(`[WG→Client] Received ${wgMessage.length} bytes from WireGuard for client ${clientID}`);
         
+        // Log ALL bytes of WireGuard response for verification
+        const wgHex = wgMessage.toString('hex').match(/.{1,2}/g)?.join(' ') || '';
+        logger.info(`[TEST-WG→Client] WireGuard response packet (${wgMessage.length} bytes):`);
+        logger.info(`[TEST-WG→Client] HEX: ${wgHex}`);
+        
+        // Calculate SHA256 for quick comparison
+        const crypto = require('crypto');
+        const wgHash = crypto.createHash('sha256').update(wgMessage).digest('hex');
+        logger.info(`[TEST-WG→Client] SHA256: ${wgHash}`);
+        
         // Obfuscate data from WireGuard
         // Convert Buffer to proper ArrayBuffer (avoid buffer pool issues)
         const wgBuffer = Buffer.from(wgMessage);
@@ -376,6 +386,16 @@ server.on('message', async (message, remote) => {
           const deobfuscatedData = session.obfuscator.deobfuscation(obfuscatedArrayBuffer);
           
           logger.debug(`[Client→WG] After deobfuscation: ${deobfuscatedData.length} bytes, sending to WireGuard ${LOCALWG_ADDRESS}:${LOCALWG_PORT}`);
+          
+          // Log ALL bytes for complete verification
+          const fullHex = Buffer.from(deobfuscatedData).toString('hex').match(/.{1,2}/g)?.join(' ') || '';
+          logger.info(`[TEST-Client→WG] Deobfuscated packet (${deobfuscatedData.length} bytes):`);
+          logger.info(`[TEST-Client→WG] HEX: ${fullHex}`);
+          
+          // Calculate SHA256 for quick comparison
+          const crypto = require('crypto');
+          const hash = crypto.createHash('sha256').update(Buffer.from(deobfuscatedData)).digest('hex');
+          logger.info(`[TEST-Client→WG] SHA256: ${hash}`);
           
           newSocket.send(deobfuscatedData, 0, deobfuscatedData.length, LOCALWG_PORT, LOCALWG_ADDRESS, (error) => {
             if (error) {

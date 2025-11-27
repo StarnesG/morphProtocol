@@ -7,14 +7,14 @@ Complete Android implementation of MorphProtocol with Capacitor plugin and demo 
 This directory contains everything needed to use MorphProtocol on Android:
 
 1. **Capacitor Plugin** (`plugin/`) - Native bridge to MorphProtocol client
-2. **Demo App** (`demo-app/`) - Complete working example with beautiful UI
+2. **Plugin** (`plugin/`) - Production-ready Capacitor plugin
 
 ## Quick Start
 
 ### Run Demo App
 
 ```bash
-cd demo-app
+cd plugin
 npm install
 npm run build
 npx cap sync
@@ -55,7 +55,7 @@ android/
 │   ├── package.json
 │   └── README.md
 │
-└── demo-app/                  # Demo Capacitor app
+└── plugin/                    # Capacitor plugin
     ├── src/
     │   ├── App.vue            # Main UI component
     │   ├── services/          # VPN service wrapper
@@ -111,7 +111,7 @@ android/
 ## Documentation
 
 - **Plugin API**: See `plugin/README.md`
-- **Demo App**: See `demo-app/README.md`
+- **Plugin**: See `plugin/README.md`
 - **Main Docs**: See `/CAPACITOR_PLUGIN.md` in root
 
 ## Requirements
@@ -131,7 +131,7 @@ cd plugin
 npm install
 
 # Demo App
-cd ../demo-app
+cd ../plugin
 npm install
 ```
 
@@ -139,7 +139,7 @@ npm install
 
 ```bash
 # Build demo app
-cd demo-app
+cd plugin
 npm run build
 
 # Sync to Android
@@ -168,14 +168,14 @@ cd plugin
 npm run build
 
 # Sync to demo app
-cd ../demo-app
+cd ../plugin
 npx cap sync
 ```
 
 ### Demo App Development
 
 ```bash
-cd demo-app
+cd plugin
 
 # Start dev server (UI only)
 npm run dev
@@ -268,7 +268,7 @@ rm -rf node_modules
 npm install
 npm run build
 
-cd ../demo-app
+cd ../plugin
 rm -rf node_modules android
 npm install
 npm run build
@@ -299,4 +299,4 @@ ISC
 
 - GitHub Issues: https://github.com/LennoxSears/morphProtocol/issues
 - Plugin Docs: plugin/README.md
-- Demo App Docs: demo-app/README.md
+- Plugin Docs: plugin/README.md

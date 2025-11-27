@@ -248,7 +248,7 @@ If you want to complete the iOS implementation:
 
 3. **Add to Demo App**
    ```bash
-   cd android/demo-app
+   cd android/plugin
    npx cap add ios
    npx cap sync ios
    npx cap open ios
@@ -270,7 +270,7 @@ Both **Android and iOS implementations are production-ready** and can be deploye
 ### How to Use
 
 ```bash
-cd android/demo-app
+cd android/plugin
 
 # Add iOS platform
 npx cap add ios

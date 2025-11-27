@@ -148,11 +148,9 @@ morphProtocol/
 │   └── types/             # TypeScript types
 ├── tests/                 # Server tests
 ├── android/
-│   ├── plugin/           # Android Capacitor plugin
-│   └── demo-app/         # Android demo app
+│   └── plugin/           # Android Capacitor plugin
 └── ios/
-    ├── plugin/           # iOS Capacitor plugin
-    └── demo-app/         # iOS demo app (symlink to android/demo-app)
+    └── plugin/           # iOS Capacitor plugin
 ```
 
 ## How It Works

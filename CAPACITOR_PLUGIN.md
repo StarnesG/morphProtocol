@@ -11,7 +11,7 @@ This package provides:
    - TypeScript API for JavaScript/TypeScript apps
    - Event system for connection state changes
 
-2. **Demo Application** (`android/demo-app/`)
+2. **Demo Application** (`android/plugin/`)
    - Complete working example
    - Beautiful UI with connection controls
    - Configuration presets
@@ -71,7 +71,7 @@ const status = await MorphProtocol.getStatus();
 ### 3. Run Demo App
 
 ```bash
-cd demo-app
+cd plugin
 npm install
 npm run build
 npx cap sync
@@ -106,7 +106,7 @@ morphProtocol/
     │   ├── tsconfig.json
     │   └── README.md
     │
-    ├── demo-app/                      # Demo Capacitor app
+    ├── plugin/                      # Demo Capacitor app
     │   ├── src/
     │   │   ├── App.vue                # Main UI component
     │   │   ├── main.ts                # Entry point
@@ -327,7 +327,7 @@ npm run build
 ### Step 2: Setup Demo App
 
 ```bash
-cd ../demo-app
+cd ../plugin
 npm install
 ```
 
@@ -365,14 +365,14 @@ cd android/plugin
 npm run build
 
 # Sync changes to demo app
-cd ../demo-app
+cd ../plugin
 npx cap sync
 ```
 
 ### Demo App Development
 
 ```bash
-cd android/demo-app
+cd android/plugin
 
 # Start dev server (for UI development)
 npm run dev
@@ -478,7 +478,7 @@ npm run build
 
 ```bash
 # Clean and rebuild
-cd android/demo-app
+cd android/plugin
 rm -rf node_modules dist android
 npm install
 npm run build
@@ -596,7 +596,7 @@ ISC
 - **GitHub Issues**: https://github.com/LennoxSears/morphProtocol/issues
 - **Android Overview**: android/README.md
 - **Plugin Docs**: android/plugin/README.md
-- **Demo App Docs**: android/demo-app/README.md
+- **Demo App Docs**: android/plugin/README.md
 
 ## Credits
 

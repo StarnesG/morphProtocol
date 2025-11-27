@@ -7,14 +7,14 @@ Complete iOS implementation of MorphProtocol with Capacitor plugin and demo app.
 This directory contains everything needed to use MorphProtocol on iOS:
 
 1. **Capacitor Plugin** (`plugin/`) - Native bridge to MorphProtocol client
-2. **Demo App** (`demo-app/`) - Shared Capacitor app (symlink to android/demo-app)
+2. **Plugin** (`plugin/`) - iOS Capacitor plugin
 
 ## Quick Start
 
 ### Run Demo App
 
 ```bash
-cd demo-app
+cd plugin
 npm install
 npm run build
 npx cap sync
@@ -56,7 +56,7 @@ ios/
 │   ├── package.json
 │   └── README.md
 │
-└── demo-app/                  # Symlink to android/demo-app
+└── plugin/                  # Symlink to android/plugin
 ```
 
 ## Features
@@ -84,12 +84,12 @@ ios/
 
 ### Demo App
 
-The demo app is shared between Android and iOS platforms. See `android/demo-app/README.md` for details.
+The demo app is shared between Android and iOS platforms. See `android/plugin/README.md` for details.
 
 ## Documentation
 
 - **Plugin API**: See `plugin/README.md`
-- **Demo App**: See `android/demo-app/README.md`
+- **Demo App**: See `android/plugin/README.md`
 - **Main Docs**: See `/CAPACITOR_PLUGIN.md` in root
 
 ## Requirements
@@ -110,7 +110,7 @@ cd plugin
 npm install
 
 # Demo App
-cd ../demo-app
+cd ../plugin
 npm install
 ```
 
@@ -118,7 +118,7 @@ npm install
 
 ```bash
 # Build demo app
-cd demo-app
+cd plugin
 npm run build
 
 # Sync to iOS
@@ -147,14 +147,14 @@ cd plugin
 npm run build
 
 # Sync to demo app
-cd ../demo-app
+cd ../plugin
 npx cap sync
 ```
 
 ### Demo App Development
 
 ```bash
-cd demo-app
+cd plugin
 
 # Start dev server (UI only)
 npm run dev
@@ -247,7 +247,7 @@ rm -rf node_modules
 npm install
 npm run build
 
-cd ../demo-app
+cd ../plugin
 rm -rf node_modules ios
 npm install
 npm run build
@@ -263,7 +263,7 @@ npx cap sync
 ### CocoaPods Issues
 
 ```bash
-cd demo-app/ios/App
+cd plugin/ios/App
 pod deintegrate
 pod install
 ```
@@ -286,4 +286,4 @@ ISC
 
 - GitHub Issues: https://github.com/LennoxSears/morphProtocol/issues
 - Plugin Docs: plugin/README.md
-- Demo App Docs: android/demo-app/README.md
+- Demo App Docs: android/plugin/README.md

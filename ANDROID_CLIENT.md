@@ -61,7 +61,7 @@ android/
 │   ├── package.json
 │   └── README.md
 │
-├── demo-app/                                   # Demo Capacitor app
+├── plugin/                                   # Demo Capacitor app
 │   ├── src/
 │   │   ├── App.vue                             # Main UI
 │   │   ├── services/vpn.service.ts             # VPN service
@@ -78,7 +78,7 @@ android/
 ### 1. Run Demo App
 
 ```bash
-cd android/demo-app
+cd android/plugin
 npm install
 npm run build
 npx cap sync

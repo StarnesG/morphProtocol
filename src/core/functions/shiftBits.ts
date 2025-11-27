@@ -3,7 +3,7 @@ function shiftBits(input: Uint8Array, _keyArray: Uint8Array, _initor:any): Uint8
     const obfuscated = new Uint8Array(length);
 
     for (let i = 0; i < length; i++) {
-        obfuscated[i] = (input[i] << 2) | (input[i] >> 6);
+        obfuscated[i] = (input[i] << 2) | (input[i] >>> 6);  // Use unsigned right shift
     }
 
     return obfuscated;
@@ -14,7 +14,7 @@ function de_shiftBits(obfuscated: Uint8Array): Uint8Array {
     const deobfuscated = new Uint8Array(length);
 
     for (let i = 0; i < length; i++) {
-        const shiftedValue = (obfuscated[i] >> 2) | (obfuscated[i] << 6);
+        const shiftedValue = (obfuscated[i] >>> 2) | (obfuscated[i] << 6);  // Use unsigned right shift
         deobfuscated[i] = shiftedValue;
     }
 

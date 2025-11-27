@@ -81,7 +81,9 @@ class Obfuscator(
         val header = ByteArray(3)
         header[0] = random.nextInt(256).toByte()
         header[1] = random.nextInt(256).toByte()
-        header[2] = paddingLength.toByte()
+        // Generate random padding length between 1 and paddingLength (matching TypeScript)
+        val actualPaddingLength = random.nextInt(paddingLength) + 1
+        header[2] = actualPaddingLength.toByte()
         
         // Calculate function combo from header
         val comboIndex = ((header[0].toInt() and 0xFF) * (header[1].toInt() and 0xFF)) % totalCombinations
@@ -99,14 +101,14 @@ class Obfuscator(
         }
         
         // Add random padding
-        val padding = ByteArray(paddingLength)
+        val padding = ByteArray(actualPaddingLength)
         random.nextBytes(padding)
         
         // Combine: header + obfuscated data + padding
-        val result = ByteArray(3 + data.size + paddingLength)
+        val result = ByteArray(3 + data.size + actualPaddingLength)
         System.arraycopy(header, 0, result, 0, 3)
         System.arraycopy(data, 0, result, 3, data.size)
-        System.arraycopy(padding, 0, result, 3 + data.size, paddingLength)
+        System.arraycopy(padding, 0, result, 3 + data.size, actualPaddingLength)
         
         return result
     }

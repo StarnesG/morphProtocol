@@ -22,19 +22,29 @@ interface ObfuscationFunction {
  */
 class BitwiseRotationAndXOR : ObfuscationFunction {
     override fun obfuscate(input: ByteArray, keyArray: ByteArray, initor: Any?): ByteArray {
-        val output = ByteArray(input.size)
+        val length = input.size
+        val output = ByteArray(length)
         for (i in input.indices) {
-            val rotated = ((input[i].toInt() and 0xFF) shl 3) or ((input[i].toInt() and 0xFF) ushr 5)
-            output[i] = ((rotated and 0xFF) xor (keyArray[i % keyArray.size].toInt() and 0xFF)).toByte()
+            // FIXED: Match TypeScript - variable shift based on position, not fixed shift of 3
+            val shift = (i % 8) + 1
+            val inputValue = input[i].toInt() and 0xFF
+            val rotated = ((inputValue shl shift) or (inputValue ushr (8 - shift))) and 0xFF
+            // FIXED: Match TypeScript - use (i + length - 1) % length for keyArray index
+            val keyIndex = (i + length - 1) % length
+            output[i] = (rotated xor (keyArray[keyIndex % keyArray.size].toInt() and 0xFF)).toByte()
         }
         return output
     }
     
     override fun deobfuscate(input: ByteArray, keyArray: ByteArray, initor: Any?): ByteArray {
-        val output = ByteArray(input.size)
+        val length = input.size
+        val output = ByteArray(length)
         for (i in input.indices) {
-            val xored = (input[i].toInt() and 0xFF) xor (keyArray[i % keyArray.size].toInt() and 0xFF)
-            output[i] = (((xored and 0xFF) ushr 3) or ((xored and 0xFF) shl 5)).toByte()
+            // FIXED: Match TypeScript - variable shift and correct keyArray index
+            val shift = (i % 8) + 1
+            val keyIndex = (i + length - 1) % length
+            val xored = (input[i].toInt() and 0xFF) xor (keyArray[keyIndex % keyArray.size].toInt() and 0xFF)
+            output[i] = (((xored ushr shift) or (xored shl (8 - shift))) and 0xFF).toByte()
         }
         return output
     }
@@ -131,7 +141,7 @@ class XorWithKey : ObfuscationFunction {
     override fun obfuscate(input: ByteArray, keyArray: ByteArray, initor: Any?): ByteArray {
         val output = ByteArray(input.size)
         for (i in input.indices) {
-            output[i] = (input[i].toInt() xor keyArray[i % keyArray.size].toInt()).toByte()
+            output[i] = ((input[i].toInt() and 0xFF) xor (keyArray[i % keyArray.size].toInt() and 0xFF)).toByte()
         }
         return output
     }
@@ -150,7 +160,7 @@ class BitwiseNOT : ObfuscationFunction {
     override fun obfuscate(input: ByteArray, keyArray: ByteArray, initor: Any?): ByteArray {
         val output = ByteArray(input.size)
         for (i in input.indices) {
-            output[i] = input[i].toInt().inv().toByte()
+            output[i] = (input[i].toInt() and 0xFF).inv().toByte()
         }
         return output
     }

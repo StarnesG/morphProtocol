@@ -15,6 +15,14 @@ export class Obfuscator {
     paddingLength: number,
     funInitor: any
   ) {
+    // Validate parameters (matching Android)
+    if (obfuscationLayer < 1 || obfuscationLayer > 4) {
+      throw new Error('Layer must be between 1 and 4');
+    }
+    if (paddingLength < 1 || paddingLength > 8) {
+      throw new Error('Padding length must be between 1 and 8');
+    }
+    
     this.key = key;
     this.paddingLength = paddingLength;
     this.functionRegistry = new FunctionRegistry(obfuscationLayer, funInitor);
@@ -53,7 +61,23 @@ export class Obfuscator {
   }
 
   private extractHeaderAndBody(input: Uint8Array): { header: Uint8Array; body: Uint8Array } {
+    // Validate minimum length
+    if (input.length < 4) {
+      throw new Error('Input too short for deobfuscation (minimum 4 bytes)');
+    }
+    
     const paddingLength = input[2];
+    
+    // Validate padding length range
+    if (paddingLength < 1 || paddingLength > 8) {
+      throw new Error(`Invalid padding length: ${paddingLength} (must be 1-8)`);
+    }
+    
+    // Validate total length
+    if (input.length < 3 + paddingLength) {
+      throw new Error(`Input too short for padding length ${paddingLength}`);
+    }
+    
     const bodyLength = input.length - 3 - paddingLength;
     
     const header = new Uint8Array(3);
@@ -125,6 +149,11 @@ export class Obfuscator {
   }
 
   public obfuscation(data: ArrayBuffer): Uint8Array {
+    // Handle empty input
+    if (data.byteLength === 0) {
+      return new Uint8Array(0);
+    }
+    
     let that = this;
     let header = new Uint8Array(crypto.randomBytes(3));
     let fnComboIndex = (header[0] * header[1]) % this.obFunCombosLength;

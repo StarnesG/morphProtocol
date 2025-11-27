@@ -8,7 +8,7 @@ function reverseBits(input: Uint8Array, _keyArray: Uint8Array, _initor:any): Uin
         for (let j = 0; j < 8; j++) {
             reversedByte <<= 1;
             reversedByte |= byte & 1;
-            byte >>= 1;
+            byte >>>= 1;  // Use unsigned right shift for clarity
         }
 
         reversed[i] = reversedByte;
@@ -27,7 +27,7 @@ function de_reverseBits(input: Uint8Array, _keyArray: Uint8Array, _initor:any): 
 
         for (let j = 0; j < 8; j++) {
             result = (result << 1) | (value & 1);
-            value >>= 1;
+            value >>>= 1;  // Use unsigned right shift for clarity
         }
 
         deobfuscated[i] = result;

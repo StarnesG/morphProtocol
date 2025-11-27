@@ -91,29 +91,29 @@ class KcpTemplate: ProtocolTemplate {
         // Frg (1 byte) - 0 for no fragmentation
         packet[5] = 0x00
         
-        // Wnd (2 bytes) - window size 256
-        packet[6] = 0x01
-        packet[7] = 0x00
+        // Wnd (2 bytes) - window size 256 (little-endian)
+        packet[6] = 0x00
+        packet[7] = 0x01
         
-        // Ts (4 bytes) - timestamp
-        withUnsafeBytes(of: timestamp.bigEndian) { bytes in
+        // Ts (4 bytes) - timestamp (little-endian)
+        withUnsafeBytes(of: timestamp.littleEndian) { bytes in
             packet.replaceSubrange(8..<12, with: bytes)
         }
         
-        // Sn (4 bytes) - sequence number
-        withUnsafeBytes(of: sequenceNumber.bigEndian) { bytes in
+        // Sn (4 bytes) - sequence number (little-endian)
+        withUnsafeBytes(of: sequenceNumber.littleEndian) { bytes in
             packet.replaceSubrange(12..<16, with: bytes)
         }
         
-        // Una (4 bytes) - unacknowledged = sn - 1
+        // Una (4 bytes) - unacknowledged = sn - 1 (little-endian)
         let una = sequenceNumber &- 1
-        withUnsafeBytes(of: una.bigEndian) { bytes in
+        withUnsafeBytes(of: una.littleEndian) { bytes in
             packet.replaceSubrange(16..<20, with: bytes)
         }
         
-        // Len (4 bytes) - payload length
+        // Len (4 bytes) - payload length (little-endian)
         let len = UInt32(data.count)
-        withUnsafeBytes(of: len.bigEndian) { bytes in
+        withUnsafeBytes(of: len.littleEndian) { bytes in
             packet.replaceSubrange(20..<24, with: bytes)
         }
         

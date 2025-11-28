@@ -445,6 +445,53 @@ server.on('message', async (message, remote) => {
   }
 });
 
+// Error handler for server socket
+server.on('error', (error) => {
+  logger.error('UDP server error:', error);
+  // Don't crash - log and continue
+});
+
+// Close handler
+server.on('close', () => {
+  logger.warn('UDP server closed');
+});
+
+// Graceful shutdown handler
+function gracefulShutdown() {
+  logger.info('Graceful shutdown initiated...');
+  
+  // Close all active sessions
+  activeSessions.forEach((session, clientID) => {
+    try {
+      const msg = encryptor.simpleEncrypt("server_shutdown");
+      server.send(msg, 0, msg.length, session.remotePort, session.remoteAddress);
+      session.socket.close();
+    } catch (error) {
+      logger.error(`Error closing session ${clientID}:`, error);
+    }
+  });
+  
+  // Clear maps
+  activeSessions.clear();
+  ipIndex.clear();
+  
+  // Close server
+  server.close(() => {
+    logger.info('UDP server closed');
+    process.exit(0);
+  });
+  
+  // Force exit after 5 seconds if graceful shutdown fails
+  setTimeout(() => {
+    logger.warn('Forced shutdown after timeout');
+    process.exit(1);
+  }, 5000);
+}
+
+// Register shutdown handlers
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
 // Start the server
 server.bind(PORT, () => {
   logger.info(`UDP server listening on port ${PORT}`);

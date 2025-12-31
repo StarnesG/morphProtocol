@@ -76,19 +76,19 @@ function handleCloseMessage(remote: any) {
       break;
     }
   }
-  
+
   if (!foundClientID) {
     logger.warn(`Received close from unknown client ${remote.address}:${remote.port}`);
     return;
   }
-  
+
   const session = activeSessions.get(foundClientID)!;
   logger.info(`Client ${foundClientID} closing connection`);
-  
+
   // Report traffic and cleanup
   subTraffic(session.userInfo.userId, session.userInfo.traffic);
   session.socket.close();
-  
+
   // Remove from both indexes
   activeSessions.delete(foundClientID);
   const ipKey = `${session.remoteAddress}:${session.remotePort}:${session.headerID}`;
@@ -101,9 +101,9 @@ function handleCloseMessage(remote: any) {
 function shutdownInactiveSession(clientID: string) {
   const session = activeSessions.get(clientID);
   if (!session) return;
-  
+
   logger.info(`Shutting down session for clientID ${clientID} due to inactivity`);
-  
+
   // Send inactivity message
   const msg = encryptor.simpleEncrypt("inactivity");
   server.send(msg, 0, msg.length, session.remotePort, session.remoteAddress, (error) => {
@@ -113,17 +113,17 @@ function shutdownInactiveSession(clientID: string) {
       logger.info(`Inactivity message sent to ${clientID}`);
     }
   });
-  
+
   // Report traffic and cleanup
   subTraffic(session.userInfo.userId, session.userInfo.traffic);
   session.socket.close();
-  
+
   // Remove from both indexes
   activeSessions.delete(clientID);
   const ipKey = `${session.remoteAddress}:${session.remotePort}:${session.headerID}`;
   ipIndex.delete(ipKey);
   logger.info(`Removed from ipIndex: ${ipKey}`);
-  
+
   subClientNum(HOST_NAME);
 }
 
@@ -154,27 +154,66 @@ server.on('message', async (message, remote) => {
     logger.warn(`Packet rate limit exceeded for ${remote.address}`);
     return;
   }
-  
+
   try {
     // Try to decrypt as control message (handshake or close)
     let decryptedMessage: Buffer;
     try {
-      decryptedMessage = Buffer.from(encryptor.simpleDecrypt(message.toString()));
-    } catch (e) {
-      // Not a control message - ignore (data packets go to per-session sockets)
-      logger.debug(`Received non-control message on main server port from ${remote.address}:${remote.port}`);
+      // 详细记录接收到的原始数据
+      logger.info(`[RAW] Received ${message.length} bytes from ${remote.address}:${remote.port}`);
+      logger.info(`[RAW] Type: ${typeof message}`);
+      logger.info(`[RAW] First 50 bytes (hex): ${message.slice(0, 50).toString('hex')}`);
+      logger.info(`[RAW] First 50 bytes (base64): ${message.slice(0, 50).toString('base64')}`);
+      logger.info(`[RAW] As string (first 100 chars): ${message.toString().substring(0, 100)}`);
+
+      // 尝试解密
+      const messageString = message.toString();
+      logger.info(`[DECRYPT] Attempting to decrypt ${messageString.length} chars`);
+      logger.info(`[DECRYPT] String preview: ${messageString.substring(0, 100)}...`);
+
+      decryptedMessage = Buffer.from(encryptor.simpleDecrypt(messageString));
+
+      logger.info(`[DECRYPT] Success! Decrypted ${decryptedMessage.length} bytes`);
+      logger.info(`[DECRYPT] Decrypted content: ${decryptedMessage.toString()}`);
+
+    } catch (e: any) {
+      // 详细的错误信息
+      logger.error(`[DECRYPT] Failed to decrypt message from ${remote.address}:${remote.port}`);
+      logger.error(`[DECRYPT] Error: ${e.message}`);
+      logger.error(`[DECRYPT] Error stack: ${e.stack}`);
+      logger.error(`[DECRYPT] Message length: ${message.length}`);
+      logger.error(`[DECRYPT] Message type: ${typeof message}`);
+      logger.error(`[DECRYPT] Message hex (first 100): ${message.slice(0, 100).toString('hex')}`);
+      logger.error(`[DECRYPT] Message base64 (first 100): ${message.slice(0, 100).toString('base64')}`);
+
+      // 尝试判断是否是数据包
+      const ipKey = `${remote.address}:${remote.port}`;
+      const possibleClientIDs = Array.from(ipIndex.entries())
+        .filter(([key]) => key.startsWith(ipKey))
+        .map(([key, clientID]) => ({ key, clientID }));
+
+      if (possibleClientIDs.length > 0) {
+        logger.info(`[DECRYPT] Found ${possibleClientIDs.length} possible sessions for this IP:port`);
+        possibleClientIDs.forEach(({ key, clientID }) => {
+          logger.info(`[DECRYPT]   - Key: ${key}, ClientID: ${clientID}`);
+        });
+      } else {
+        logger.warn(`[DECRYPT] No active session found for ${remote.address}:${remote.port}`);
+        logger.warn(`[DECRYPT] This might be a data packet sent to wrong port`);
+      }
+
       return;
     }
-    
+
     // Handle close message
     if (decryptedMessage.toString() === 'close') {
       handleCloseMessage(remote);
       return;
     }
-    
+
     // Handle handshake
     logger.info(`Received handshake from ${remote.address}:${remote.port}`);
-    
+
     // Rate limit check for handshakes
     if (!handshakeRateLimiter.isAllowed(remote.address)) {
       logger.warn(`Handshake rate limit exceeded for ${remote.address}`);
@@ -185,18 +224,18 @@ server.on('message', async (message, remote) => {
     const clientIDBase64 = handshakeData.clientID;
     const clientIDBuffer = Buffer.from(clientIDBase64, 'base64');
     const clientID = clientIDBuffer.toString('hex'); // Use hex as Map key
-    
+
     logger.info(`ClientID: ${clientID}`);
     logger.info(`UserID: ${handshakeData.userId}`);
     logger.info(`Template ID: ${handshakeData.templateId}`);
-    
+
     // Check if session already exists (reconnection/IP migration)
     if (activeSessions.has(clientID)) {
       const session = activeSessions.get(clientID)!;
       logger.info(`Client ${clientID} reconnecting`);
       logger.info(`  Old IP: ${session.remoteAddress}:${session.remotePort}`);
       logger.info(`  New IP: ${remote.address}:${remote.port}`);
-      
+
       // Update ipIndex if IP changed
       if (session.remoteAddress !== remote.address || session.remotePort !== remote.port) {
         const oldIpKey = `${session.remoteAddress}:${session.remotePort}:${session.headerID}`;
@@ -205,12 +244,12 @@ server.on('message', async (message, remote) => {
         ipIndex.set(newIpKey, clientID);
         logger.info(`Updated ipIndex: ${oldIpKey} → ${newIpKey}`);
       }
-      
+
       // Update IP and port
       session.remoteAddress = remote.address;
       session.remotePort = remote.port;
       session.lastSeen = Date.now();
-      
+
       // Send existing port back
       const responsePort = session.socket.address().port;
       const response = {
@@ -219,7 +258,7 @@ server.on('message', async (message, remote) => {
         status: 'reconnected'
       };
       const responseEncrypted = encryptor.simpleEncrypt(JSON.stringify(response));
-      
+
       server.send(responseEncrypted, 0, responseEncrypted.length, remote.port, remote.address, (error) => {
         if (error) {
           logger.error(`Failed to send reconnection response to ${clientID}`);
@@ -231,7 +270,7 @@ server.on('message', async (message, remote) => {
     }
     // New session - create obfuscator, template, and socket
     logger.info(`Creating new session for clientID ${clientID}`);
-    
+
     // Validate fnInitor format
     logger.info(`Received fnInitor type: ${typeof handshakeData.fnInitor}`);
     if (!handshakeData.fnInitor || typeof handshakeData.fnInitor !== 'object') {
@@ -251,22 +290,22 @@ server.on('message', async (message, remote) => {
     logger.info(`fnInitor validation passed! substitutionTable first 10 values: ${handshakeData.fnInitor.substitutionTable.slice(0, 10)}`);
     logger.info(`Creating Obfuscator with: key=${handshakeData.key}, layer=${handshakeData.obfuscationLayer}, padding=${handshakeData.randomPadding}`);
 
-    
+
     const obfuscator = new Obfuscator(
       handshakeData.key,
       handshakeData.obfuscationLayer,
       handshakeData.randomPadding,
       handshakeData.fnInitor
     );
-    
+
     logger.info(`Obfuscator created successfully for client ${clientID}`);
-    
+
     // Create protocol template from handshake
     const template = createTemplate(handshakeData.templateId, handshakeData.templateParams);
     logger.info(`Created template: ${template.name} (ID: ${template.id})`);
-    
+
     const newSocket = dgram.createSocket('udp4');
-    
+
     // Extract headerID from clientID (protocol-specific)
     let headerIDLength: number;
     switch (template.id) {
@@ -283,10 +322,10 @@ server.on('message', async (message, remote) => {
         logger.error(`Unknown template ID: ${template.id}`);
         return;
     }
-    
+
     const headerID = clientIDBuffer.slice(0, headerIDLength).toString('hex');
     logger.info(`HeaderID: ${headerID} (${headerIDLength} bytes for ${template.name})`);
-    
+
     // Create session
     const session: ClientSession = {
       clientID,
@@ -300,32 +339,32 @@ server.on('message', async (message, remote) => {
       publicKey: handshakeData.publicKey,
       lastSeen: Date.now()
     };
-    
+
     // Add to both indexes
     activeSessions.set(clientID, session);
     const ipKey = `${remote.address}:${remote.port}:${headerID}`;
     ipIndex.set(ipKey, clientID);
     logger.info(`Added to ipIndex: ${ipKey} → ${clientID}`);
-    
+
     addClientNum(HOST_NAME);
     // Handle messages from WireGuard
     newSocket.on('message', (wgMessage, wgRemote) => {
       if (wgRemote.address === LOCALWG_ADDRESS && wgRemote.port === LOCALWG_PORT) {
         const session = activeSessions.get(clientID);
         if (!session) return;
-        
+
         logger.debug(`[WG→Client] Received ${wgMessage.length} bytes from WireGuard for client ${clientID}`);
-        
+
         // Log ALL bytes of WireGuard response for verification
         const wgHex = wgMessage.toString('hex').match(/.{1,2}/g)?.join(' ') || '';
         logger.info(`[TEST-WG→Client] WireGuard response packet (${wgMessage.length} bytes):`);
         logger.info(`[TEST-WG→Client] HEX: ${wgHex}`);
-        
+
         // Calculate SHA256 for quick comparison
         const crypto = require('crypto');
         const wgHash = crypto.createHash('sha256').update(wgMessage).digest('hex');
         logger.info(`[TEST-WG→Client] SHA256: ${wgHash}`);
-        
+
         // Obfuscate data from WireGuard
         // Convert Buffer to proper ArrayBuffer (avoid buffer pool issues)
         const wgBuffer = Buffer.from(wgMessage);
@@ -335,14 +374,14 @@ server.on('message', async (message, remote) => {
         );
         const obfuscatedData = session.obfuscator.obfuscation(wgArrayBuffer);
         logger.debug(`[WG→Client] After obfuscation: ${obfuscatedData.length} bytes`);
-        
+
         // Encapsulate with protocol template
         const packet = session.template.encapsulate(Buffer.from(obfuscatedData), clientIDBuffer);
         logger.debug(`[WG→Client] After template: ${packet.length} bytes, sending to ${session.remoteAddress}:${session.remotePort}`);
-        
+
         // Update template state
         session.template.updateState();
-        
+
         // Send to client
         newSocket.send(packet, 0, packet.length, session.remotePort, session.remoteAddress, (error) => {
           if (error) {
@@ -351,7 +390,7 @@ server.on('message', async (message, remote) => {
             logger.debug(`[WG→Client] Packet sent to client successfully`);
           }
         });
-        
+
         // Track download traffic (server → client) for billing/quota
         session.userInfo.traffic += packet.length;
         session.lastSeen = Date.now();
@@ -360,23 +399,23 @@ server.on('message', async (message, remote) => {
         // Data from client (with protocol template encapsulation)
         const session = activeSessions.get(clientID);
         if (!session) return;
-        
+
         // Decapsulate with protocol template
         const obfuscatedData = session.template.decapsulate(wgMessage);
         if (!obfuscatedData) {
           logger.warn(`Failed to decapsulate packet from client ${clientID}`);
           return;
         }
-        
+
         // Check if heartbeat (1 byte = 0x01)
         const isHeartbeat = obfuscatedData.length === 1 && obfuscatedData[0] === 0x01;
         // Update last seen
         session.lastSeen = Date.now();
-        
+
         if (isHeartbeat) {
           logger.debug(`[Client→WG] Heartbeat received from client ${clientID}`);
         }
-        
+
         if (!isHeartbeat) {
           logger.debug(`[Client→WG] Received ${obfuscatedData.length} bytes from client ${clientID}`);
           // Deobfuscate and forward to WireGuard
@@ -389,21 +428,21 @@ server.on('message', async (message, remote) => {
           // Log obfuscated data header for debugging
           const obfuscatedHeader = Buffer.from(obfuscatedArrayBuffer).slice(0, 3);
           logger.info(`[TEST-Deobfuscate] Header: [${obfuscatedHeader[0]}, ${obfuscatedHeader[1]}, ${obfuscatedHeader[2]}]`);
-          
+
           const deobfuscatedData = session.obfuscator.deobfuscation(obfuscatedArrayBuffer);
-          
+
           logger.debug(`[Client→WG] After deobfuscation: ${deobfuscatedData.length} bytes, sending to WireGuard ${LOCALWG_ADDRESS}:${LOCALWG_PORT}`);
-          
+
           // Log ALL bytes for complete verification
           const fullHex = Buffer.from(deobfuscatedData).toString('hex').match(/.{1,2}/g)?.join(' ') || '';
           logger.info(`[TEST-Client→WG] Deobfuscated packet (${deobfuscatedData.length} bytes):`);
           logger.info(`[TEST-Client→WG] HEX: ${fullHex}`);
-          
+
           // Calculate SHA256 for quick comparison
           const crypto = require('crypto');
           const hash = crypto.createHash('sha256').update(Buffer.from(deobfuscatedData)).digest('hex');
           logger.info(`[TEST-Client→WG] SHA256: ${hash}`);
-          
+
           newSocket.send(deobfuscatedData, 0, deobfuscatedData.length, LOCALWG_PORT, LOCALWG_ADDRESS, (error) => {
             if (error) {
               logger.error(`[Client→WG] Failed to send data to WireGuard for client ${clientID}:`, error);
@@ -411,7 +450,7 @@ server.on('message', async (message, remote) => {
               logger.debug(`[Client→WG] Packet sent to WireGuard successfully`);
             }
           });
-          
+
           // Note: We only track download traffic (server → client), not upload
         }
       }
@@ -429,7 +468,7 @@ server.on('message', async (message, remote) => {
         status: 'connected'
       };
       const responseEncrypted = encryptor.simpleEncrypt(JSON.stringify(response));
-      
+
       server.send(responseEncrypted, 0, responseEncrypted.length, remote.port, remote.address, (error) => {
         if (error) {
           logger.error(`Failed to send response to client ${clientID}`);
@@ -459,7 +498,7 @@ server.on('close', () => {
 // Graceful shutdown handler
 function gracefulShutdown() {
   logger.info('Graceful shutdown initiated...');
-  
+
   // Close all active sessions
   activeSessions.forEach((session, clientID) => {
     try {
@@ -470,17 +509,17 @@ function gracefulShutdown() {
       logger.error(`Error closing session ${clientID}:`, error);
     }
   });
-  
+
   // Clear maps
   activeSessions.clear();
   ipIndex.clear();
-  
+
   // Close server
   server.close(() => {
     logger.info('UDP server closed');
     process.exit(0);
   });
-  
+
   // Force exit after 5 seconds if graceful shutdown fails
   setTimeout(() => {
     logger.warn('Forced shutdown after timeout');
